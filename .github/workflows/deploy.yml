@@ -1,0 +1,11 @@
+
+- run: docker-compose --profile dev up -d
+- run: docker-compose run --rm app_dev pytest --maxfail=1 -q
+- run: docker-compose down -v
+
+- name: Snyk Scan
+  uses: snyk/actions@master
+  with:
+    args: test --severity-threshold=high
+  env:
+    SNYK_TOKEN: ${{ secrets.SNYK_TOKEN }}

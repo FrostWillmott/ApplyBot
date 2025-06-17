@@ -1,0 +1,50 @@
+services:
+  app:
+    build:
+      context: .
+      target: final
+    profiles: ["prod"]
+    command: ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "80"]
+    # …
+
+  worker:
+    build:
+      context: .
+      target: final
+    command: ["rq", "worker", "applybot", "--with-scheduler"]
+    profiles: ["prod"]
+    # …
+
+  app_dev:
+    build:
+      context: .
+      target: final
+    entrypoint: ["/app/entrypoint.sh"]
+    command: ["uvicorn", "app.main:app", "--reload", "--host", "0.0.0.0", "--port", "80"]
+    profiles: ["dev"]
+    # …
+
+  tests:
+    build:
+      context: .
+      target: dev-builder
+    command: ["pytest", "--maxfail=1", "-q"]
+    profiles: ["dev"]
+
+  # База данных
+  db:
+    image: postgres:15
+    env_file:
+      - .env
+    volumes:
+      - db-data:/var/lib/postgresql/data
+    profiles: ["dev", "prod"]
+
+  # Redis для RQ
+  redis:
+    image: redis:7
+    command: ["redis-server", "--appendonly", "yes"]
+    profiles: ["dev", "prod"]
+
+volumes:
+  db-data:
