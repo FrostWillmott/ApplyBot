@@ -1,9 +1,26 @@
+"""
+ApplyBot - Automated job application system for hh.ru
+
+This is the main entry point for the FastAPI application.
+It sets up the app, middleware, routers, and startup/shutdown events.
+"""
+
+import logging
+
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from app.routers.apply import router as apply_router
-from app.routers.auth import router as auth_router
+from app.core.storage import TokenStorage
+from app.routers import apply_router, auth_router
 
+# Configure logging
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
+)
+logger = logging.getLogger(__name__)
+
+# Create FastAPI app
 app = FastAPI(
     title="ApplyBot",
     description="Automated job application system for hh.ru",
@@ -45,12 +62,17 @@ async def health_check():
 @app.on_event("startup")
 async def startup_event():
     """Initialize database and other services on startup."""
-    from app.core.storage import TokenStorage
+    logger.info("Initializing application...")
 
+    # Initialize database models
     await TokenStorage.init_models()
+
+    logger.info("Application initialized successfully")
 
 
 @app.on_event("shutdown")
 async def shutdown_event():
     """Cleanup on shutdown."""
-    pass
+    logger.info("Shutting down application...")
+    # Close any open connections or resources
+    logger.info("Application shutdown complete")

@@ -25,6 +25,24 @@ class BulkApplyRequest(ApplyRequest):
     remote_only: bool | None = Field(
         default=False, description="Only apply to remote positions"
     )
+    experience_level: str | None = Field(
+        default=None, description="Required experience level (e.g., 'noExperience', 'between1And3', 'between3And6', 'moreThan6')"
+    )
+    required_skills: list[str] | None = Field(
+        default=None, description="List of required skills that must be present in the vacancy"
+    )
+    excluded_keywords: list[str] | None = Field(
+        default=None, description="Keywords to exclude from job descriptions"
+    )
+    employment_types: list[str] | None = Field(
+        default=None, description="Acceptable employment types (e.g., 'full', 'part', 'project')"
+    )
+    max_commute_time: int | None = Field(
+        default=None, description="Maximum commute time in minutes"
+    )
+    preferred_schedule: list[str] | None = Field(
+        default=None, description="Preferred work schedules (e.g., 'flexible', 'remote', 'shift')"
+    )
 
 
 class ApplyResponse(BaseModel):

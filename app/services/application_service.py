@@ -282,9 +282,20 @@ class ApplicationService:
             resume_id: str
     ) -> bool:
         """Check if we've already applied to this vacancy."""
-        # Implementation depends on your tracking system
-        # Could check database or HH.ru API
-        return False
+        async with async_session() as session:
+            from sqlalchemy import select
+            from app.models.application import ApplicationHistory
+
+            # Query the application history
+            query = select(ApplicationHistory).where(
+                ApplicationHistory.vacancy_id == vacancy_id,
+                ApplicationHistory.resume_id == resume_id
+            )
+
+            result = await session.execute(query)
+            application = result.scalar_one_or_none()
+
+            return application is not None
 
     async def _record_application(
             self,

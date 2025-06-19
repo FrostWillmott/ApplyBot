@@ -1,5 +1,6 @@
 import asyncio
 import logging
+import random
 from datetime import datetime, timedelta
 from typing import Any
 
@@ -83,35 +84,83 @@ class HHClient:
             self,
             method: str,
             endpoint: str,
+            max_retries: int = 3,
+            base_delay: float = 1.0,
             **kwargs
     ) -> httpx.Response:
-        """Make HTTP request with error handling and rate limiting."""
+        """Make HTTP request with error handling, rate limiting, and exponential backoff.
+
+        Args:
+            method: HTTP method (GET, POST, etc.)
+            endpoint: API endpoint
+            max_retries: Maximum number of retry attempts
+            base_delay: Base delay for exponential backoff in seconds
+            **kwargs: Additional arguments for the request
+
+        Returns:
+            httpx.Response: The HTTP response
+
+        Raises:
+            HHAPIError: If the request fails after all retries
+        """
         await self._ensure_token()
         await self._rate_limit()
 
-        try:
-            response = await self.client.request(method, endpoint, **kwargs)
-
-            # Enhanced error handling
-            if response.status_code == 429:
-                # Rate limit exceeded
-                retry_after = int(response.headers.get("Retry-After", 60))
-                logger.warning(f"Rate limited. Waiting {retry_after} seconds")
-                await asyncio.sleep(retry_after)
-                return await self._make_request(method, endpoint, **kwargs)
-
-            response.raise_for_status()
-            return response
-
-        except httpx.HTTPStatusError as e:
-            error_data = {}
+        retries = 0
+        while True:
             try:
-                error_data = e.response.json()
-            except:
-                error_data = {"message": e.response.text}
+                response = await self.client.request(method, endpoint, **kwargs)
 
-            logger.error(f"HH API error: {e.response.status_code} - {error_data}")
-            raise HHAPIError(e.response.status_code, str(error_data), error_data)
+                # Handle rate limiting (429)
+                if response.status_code == 429:
+                    retry_after = int(response.headers.get("Retry-After", 60))
+                    logger.warning(f"Rate limited. Waiting {retry_after} seconds")
+                    await asyncio.sleep(retry_after)
+                    continue  # Retry immediately after waiting
+
+                # Success case
+                response.raise_for_status()
+                return response
+
+            except httpx.HTTPStatusError as e:
+                # Don't retry for client errors (4xx) except rate limiting and server unavailable
+                if e.response.status_code < 500 and e.response.status_code != 429 and e.response.status_code != 408:
+                    error_data = {}
+                    try:
+                        error_data = e.response.json()
+                    except:
+                        error_data = {"message": e.response.text}
+
+                    logger.error(f"HH API client error: {e.response.status_code} - {error_data}")
+                    raise HHAPIError(e.response.status_code, str(error_data), error_data)
+
+                # For server errors (5xx) and timeouts, use exponential backoff
+                retries += 1
+                if retries > max_retries:
+                    error_data = {}
+                    try:
+                        error_data = e.response.json()
+                    except:
+                        error_data = {"message": e.response.text}
+
+                    logger.error(f"HH API error after {max_retries} retries: {e.response.status_code} - {error_data}")
+                    raise HHAPIError(e.response.status_code, str(error_data), error_data)
+
+                # Calculate exponential backoff with jitter
+                delay = base_delay * (2 ** (retries - 1)) * (0.5 + 0.5 * random.random())
+                logger.warning(f"Retry {retries}/{max_retries} after {delay:.2f}s for {method} {endpoint}")
+                await asyncio.sleep(delay)
+
+            except (httpx.ConnectError, httpx.ReadTimeout, httpx.WriteTimeout, httpx.PoolTimeout) as e:
+                # Network-related errors
+                retries += 1
+                if retries > max_retries:
+                    logger.error(f"Network error after {max_retries} retries: {str(e)}")
+                    raise HHAPIError(503, f"Network error: {str(e)}")
+
+                delay = base_delay * (2 ** (retries - 1)) * (0.5 + 0.5 * random.random())
+                logger.warning(f"Network error. Retry {retries}/{max_retries} after {delay:.2f}s for {method} {endpoint}")
+                await asyncio.sleep(delay)
 
     # Vacancy Management
     async def search_vacancies(
