@@ -1,0 +1,180 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>ApplyBot - Automated Job Application System</title>
+    <link rel="stylesheet" href="styles.css">
+    <link href="https://fonts.googleapis.com/css2?family=Roboto:wght@300;400;500;700&display=swap" rel="stylesheet">
+</head>
+<body>
+    <header>
+        <div class="container">
+            <h1>ApplyBot</h1>
+            <p>Automated Job Application System for hh.ru</p>
+        </div>
+    </header>
+
+    <main class="container">
+        <section id="auth-section" class="card">
+            <h2>Authentication</h2>
+            <p>Connect your HeadHunter account to start applying for jobs.</p>
+            <button id="login-btn" class="btn primary">Login with HeadHunter</button>
+            <div id="auth-status" class="status-box hidden">
+                <p>Authentication status: <span id="auth-status-text">Not authenticated</span></p>
+            </div>
+        </section>
+
+        <section id="search-section" class="card">
+            <h2>Search Vacancies</h2>
+            <div class="form-group">
+                <label for="search-text">Search Query:</label>
+                <input type="text" id="search-text" placeholder="e.g., Python Developer">
+            </div>
+            <div class="form-row">
+                <div class="form-group">
+                    <label for="search-page">Page:</label>
+                    <input type="number" id="search-page" value="0" min="0">
+                </div>
+                <div class="form-group">
+                    <label for="search-per-page">Results Per Page:</label>
+                    <input type="number" id="search-per-page" value="20" min="1" max="100">
+                </div>
+            </div>
+            <button id="search-btn" class="btn secondary">Search</button>
+            
+            <div id="search-results" class="results-container hidden">
+                <h3>Search Results</h3>
+                <div id="results-list" class="results-list"></div>
+                <div class="pagination">
+                    <button id="prev-page" class="btn small">Previous</button>
+                    <span id="page-info">Page 1</span>
+                    <button id="next-page" class="btn small">Next</button>
+                </div>
+            </div>
+        </section>
+
+        <section id="apply-section" class="card">
+            <h2>Apply to Jobs</h2>
+            <div class="tabs">
+                <button class="tab-btn active" data-tab="single">Single Application</button>
+                <button class="tab-btn" data-tab="bulk">Bulk Application</button>
+            </div>
+            
+            <div id="single-tab" class="tab-content active">
+                <h3>Apply to a Single Vacancy</h3>
+                <div class="form-group">
+                    <label for="vacancy-id">Vacancy ID:</label>
+                    <input type="text" id="vacancy-id" placeholder="e.g., 12345678">
+                </div>
+                <div class="form-group">
+                    <label for="position">Position:</label>
+                    <input type="text" id="position" placeholder="e.g., Python Developer">
+                </div>
+                <div class="form-group">
+                    <label for="resume">Resume Summary:</label>
+                    <textarea id="resume" rows="4" placeholder="Brief summary of your resume"></textarea>
+                </div>
+                <div class="form-group">
+                    <label for="skills">Skills:</label>
+                    <textarea id="skills" rows="3" placeholder="List your relevant skills"></textarea>
+                </div>
+                <div class="form-group">
+                    <label for="experience">Experience:</label>
+                    <textarea id="experience" rows="4" placeholder="Summary of your work experience"></textarea>
+                </div>
+                <div class="form-group">
+                    <label for="resume-id">Resume ID:</label>
+                    <input type="text" id="resume-id" placeholder="Your HH.ru resume ID">
+                </div>
+                <button id="apply-single-btn" class="btn primary">Apply</button>
+            </div>
+            
+            <div id="bulk-tab" class="tab-content">
+                <h3>Bulk Application</h3>
+                <div class="form-group">
+                    <label for="bulk-position">Position:</label>
+                    <input type="text" id="bulk-position" placeholder="e.g., Python Developer">
+                </div>
+                <div class="form-group">
+                    <label for="bulk-resume">Resume Summary:</label>
+                    <textarea id="bulk-resume" rows="4" placeholder="Brief summary of your resume"></textarea>
+                </div>
+                <div class="form-group">
+                    <label for="bulk-skills">Skills:</label>
+                    <textarea id="bulk-skills" rows="3" placeholder="List your relevant skills"></textarea>
+                </div>
+                <div class="form-group">
+                    <label for="bulk-experience">Experience:</label>
+                    <textarea id="bulk-experience" rows="4" placeholder="Summary of your work experience"></textarea>
+                </div>
+                <div class="form-group">
+                    <label for="bulk-resume-id">Resume ID:</label>
+                    <input type="text" id="bulk-resume-id" placeholder="Your HH.ru resume ID">
+                </div>
+                
+                <div class="form-group">
+                    <label for="exclude-companies">Exclude Companies (comma-separated):</label>
+                    <input type="text" id="exclude-companies" placeholder="e.g., Company1, Company2">
+                </div>
+                <div class="form-row">
+                    <div class="form-group">
+                        <label for="salary-min">Minimum Salary:</label>
+                        <input type="number" id="salary-min" placeholder="e.g., 100000">
+                    </div>
+                    <div class="form-group checkbox-group">
+                        <input type="checkbox" id="remote-only">
+                        <label for="remote-only">Remote Only</label>
+                    </div>
+                </div>
+                <div class="form-group">
+                    <label for="experience-level">Experience Level:</label>
+                    <select id="experience-level">
+                        <option value="">Any</option>
+                        <option value="noExperience">No Experience</option>
+                        <option value="between1And3">1-3 Years</option>
+                        <option value="between3And6">3-6 Years</option>
+                        <option value="moreThan6">More than 6 Years</option>
+                    </select>
+                </div>
+                <div class="form-group">
+                    <label for="max-applications">Maximum Applications:</label>
+                    <input type="number" id="max-applications" value="20" min="1" max="50">
+                </div>
+                <button id="apply-bulk-btn" class="btn primary">Apply to Multiple Jobs</button>
+            </div>
+            
+            <div id="apply-results" class="results-container hidden">
+                <h3>Application Results</h3>
+                <div id="apply-results-list" class="results-list"></div>
+            </div>
+        </section>
+
+        <section id="analytics-section" class="card">
+            <h2>Application Analytics</h2>
+            <div class="form-group">
+                <label for="user-id">User ID:</label>
+                <input type="text" id="user-id" placeholder="Your user ID">
+            </div>
+            <div class="form-group">
+                <label for="days">Days:</label>
+                <input type="number" id="days" value="30" min="1" max="365">
+            </div>
+            <button id="analytics-btn" class="btn secondary">Get Analytics</button>
+            
+            <div id="analytics-results" class="results-container hidden">
+                <h3>Analytics Results</h3>
+                <div id="analytics-data" class="analytics-data"></div>
+            </div>
+        </section>
+    </main>
+
+    <footer>
+        <div class="container">
+            <p>&copy; 2023 ApplyBot. All rights reserved.</p>
+        </div>
+    </footer>
+
+    <script src="script.js"></script>
+</body>
+</html>

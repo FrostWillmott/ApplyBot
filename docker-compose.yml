@@ -5,7 +5,14 @@ services:
       target: final
     profiles: ["prod"]
     command: ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "80"]
-    # …
+    depends_on:
+      - db
+      - redis
+    environment:
+      - DATABASE_URL=postgresql+asyncpg://postgres:postgres@db:5432/applybot
+      - REDIS_URL=redis://redis:6379/0
+    env_file:
+      - .env
 
   worker:
     build:
@@ -13,38 +20,99 @@ services:
       target: final
     command: ["rq", "worker", "applybot", "--with-scheduler"]
     profiles: ["prod"]
-    # …
+    depends_on:
+      - db
+      - redis
+    environment:
+      - DATABASE_URL=postgresql+asyncpg://postgres:postgres@db:5432/applybot
+      - REDIS_URL=redis://redis:6379/0
+    env_file:
+      - .env
 
   app_dev:
     build:
       context: .
-      target: final
+      target: dev-final
     entrypoint: ["/app/entrypoint.sh"]
     command: ["uvicorn", "app.main:app", "--reload", "--host", "0.0.0.0", "--port", "80"]
     profiles: ["dev"]
-    # …
+    depends_on:
+      - db
+      - redis
+    environment:
+      - DATABASE_URL=postgresql+asyncpg://postgres:postgres@db:5432/applybot
+      - REDIS_URL=redis://redis:6379/0
+    env_file:
+      - .env
+    volumes:
+      - .:/app
+    ports:
+      - "8001:80"
 
   tests:
     build:
       context: .
-      target: dev-builder
+      target: dev-final
     command: ["pytest", "--maxfail=1", "-q"]
     profiles: ["dev"]
+    depends_on:
+      - db
+      - redis
+    environment:
+      - DATABASE_URL=postgresql+asyncpg://postgres:postgres@db:5432/test_applybot
+      - REDIS_URL=redis://redis:6379/1
+    env_file:
+      - .env
 
   # База данных
   db:
     image: postgres:15
-    env_file:
-      - .env
+    environment:
+      - POSTGRES_DB=applybot
+      - POSTGRES_USER=postgres
+      - POSTGRES_PASSWORD=postgres
+      - POSTGRES_HOST_AUTH_METHOD=trust
     volumes:
       - db-data:/var/lib/postgresql/data
     profiles: ["dev", "prod"]
+    ports:
+      - "5434:5432"
 
   # Redis для RQ
   redis:
     image: redis:7
     command: ["redis-server", "--appendonly", "yes"]
     profiles: ["dev", "prod"]
+    ports:
+      - "6380:6379"
+
+  # Frontend for production
+  frontend:
+    build:
+      context: .
+      dockerfile: Dockerfile.frontend
+    profiles: ["prod"]
+    ports:
+      - "3000:80"
+    environment:
+      - BACKEND_SERVICE=app
+    depends_on:
+      - app
+
+  # Frontend for development
+  frontend_dev:
+    build:
+      context: .
+      dockerfile: Dockerfile.frontend
+    profiles: ["dev"]
+    ports:
+      - "8000:80"
+    volumes:
+      - ./app/static:/usr/share/nginx/html
+    environment:
+      - BACKEND_SERVICE=app_dev
+    depends_on:
+      - app_dev
 
 volumes:
   db-data:

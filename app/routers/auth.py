@@ -1,13 +1,14 @@
 # app/routers/auth.py
 
 import secrets
+from datetime import datetime
 
 from fastapi import APIRouter, HTTPException
 from fastapi.responses import JSONResponse, RedirectResponse
 from starlette.requests import Request
 
 from app.core.config import settings
-from app.core.storage import TokenStorage  # ваш модуль для сохранения токенов
+from app.core.storage import TokenStorage
 from app.services.hh_client import HHClient
 
 router = APIRouter(prefix="/auth", tags=["auth"])
@@ -22,7 +23,7 @@ async def login(request: Request):
     на страницу авторизации HH с client_id и redirect_uri.
     """
     state = secrets.token_urlsafe(16)
-    _state_store[state] = request.client.host  # или любая логика хранения
+    _state_store[state] = request.client.host
     params = {
         "response_type": "code",
         "client_id": settings.hh_client_id,
@@ -47,9 +48,8 @@ async def callback(code: str, state: str):
     hh = HHClient()
     token_data = await hh.get_access_token(code)
 
-    # Сохраните token_data через ваш слой хранения (БД, Redis и т.п.)
-    # Предполагаем, что TokenStorage.save вернёт модель или ID записи
-    await TokenStorage.save(
+    # Сохраняем токены в БД для использования другими сервисами
+    saved_token = await TokenStorage.save(
         {
             "access_token": token_data["access_token"],
             "refresh_token": token_data["refresh_token"],
@@ -61,4 +61,5 @@ async def callback(code: str, state: str):
     # Убираем state из временного хранилища
     _state_store.pop(state, None)
 
-    return JSONResponse({"status": "ok", "tokens": token_data})
+    # Перенаправляем пользователя на главную страницу после успешной аутентификации
+    return RedirectResponse(url="/")
