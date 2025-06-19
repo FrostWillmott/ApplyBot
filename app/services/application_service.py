@@ -1,11 +1,36 @@
+"""Main application business logic for job applications.
+
+This file contains:
+- Application workflow orchestration
+- Business rules and validation
+- Integration between HH.ru API and LLM services
+- Application filtering and processing logic
+"""
+
+import asyncio
+import logging
+from datetime import datetime
+
+from app.core.storage import async_session
+from app.models.application import ApplicationHistory
 from app.schemas.apply import ApplyRequest, ApplyResponse, BulkApplyRequest
 from app.services.hh_client import HHClient
 from app.services.llm.base import LLMProvider
-from app.services.prompt_builder import build_application_prompt
+from app.utils.filters import ApplicationFilter
+from app.utils.validators import validate_application_request
+
+logger = logging.getLogger(__name__)
 
 
 class ApplicationService:
-    """Service for handling job applications with business logic."""
+    """Core service for handling job applications.
+
+    This service orchestrates the entire application process:
+    1. Vacancy search and filtering
+    2. Application content generation
+    3. Submission to HH.ru
+    4. Result tracking and analytics
+    """
 
     def __init__(self, hh_client: HHClient, llm_provider: LLMProvider):
         self.hh_client = hh_client
@@ -14,141 +39,277 @@ class ApplicationService:
     async def apply_to_single_vacancy(
             self,
             vacancy_id: str,
-            request: ApplyRequest
+            request: ApplyRequest,
+            user_id: str | None = None
     ) -> ApplyResponse:
-        """Apply to a single vacancy by ID."""
-        # Get full vacancy details
-        vacancy = await self.hh_client.get_vacancy_details(vacancy_id)
+        """Apply to a single vacancy.
 
-        # Get screening questions if any
-        questions = await self.hh_client.get_vacancy_questions(vacancy_id)
-        if questions:
-            vacancy["questions"] = questions
+        Business Logic:
+        1. Validate request and check if already applied
+        2. Fetch vacancy details and questions
+        3. Generate personalized application content
+        4. Submit application to HH.ru
+        5. Record application in database
+        """
+        # Validate request
+        validation_result = await validate_application_request(request)
+        if not validation_result.is_valid:
+            return ApplyResponse(
+                vacancy_id=vacancy_id,
+                status="error",
+                error_detail=f"Invalid request: {validation_result.error}"
+            )
 
-        # Generate application content
-        prompt = build_application_prompt(request, vacancy)
-        application_content = await self.llm_provider.generate(prompt)
+        try:
+            # Check if already applied
+            if await self._has_already_applied(vacancy_id, request.resume_id):
+                return ApplyResponse(
+                    vacancy_id=vacancy_id,
+                    status="skipped",
+                    error_detail="Already applied to this vacancy"
+                )
 
-        # Submit application
-        hh_response = await self.hh_client.apply(
-            vacancy_id=vacancy_id,
-            resume_id=request.resume_id,
-            cover_letter=application_content
-        )
+            # Fetch vacancy details
+            vacancy = await self.hh_client.get_vacancy_details(vacancy_id)
 
-        return ApplyResponse(
-            vacancy_id=vacancy_id,
-            status="success",
-            vacancy_title=vacancy.get("name", "Unknown"),
-            cover_letter=application_content,
-            hh_response=hh_response
-        )
+            # Business rule: Check if we can apply
+            can_apply, reason = await self._can_apply_to_vacancy(vacancy)
+            if not can_apply:
+                return ApplyResponse(
+                    vacancy_id=vacancy_id,
+                    status="skipped",
+                    vacancy_title=vacancy.get("name"),
+                    error_detail=reason
+                )
+
+            # Generate application content
+            application_content = await self._generate_application_content(
+                vacancy, request
+            )
+
+            # Submit to HH.ru
+            hh_response = await self.hh_client.apply(
+                vacancy_id=vacancy_id,
+                resume_id=request.resume_id,
+                cover_letter=application_content["cover_letter"],
+                answers=application_content.get("answers")
+            )
+
+            # Record successful application
+            await self._record_application(
+                vacancy_id=vacancy_id,
+                request=request,
+                response=hh_response,
+                user_id=user_id
+            )
+
+            return ApplyResponse(
+                vacancy_id=vacancy_id,
+                status="success",
+                vacancy_title=vacancy.get("name"),
+                cover_letter=application_content["cover_letter"],
+                hh_response=hh_response
+            )
+
+        except Exception as e:
+            logger.error(f"Application failed for vacancy {vacancy_id}: {e}")
+            return ApplyResponse(
+                vacancy_id=vacancy_id,
+                status="error",
+                vacancy_title=vacancy.get("name", "Unknown"),
+                error_detail=str(e)
+            )
 
     async def bulk_apply(
             self,
             request: BulkApplyRequest,
-            max_applications: int = 20
+            max_applications: int = 20,
+            user_id: str | None = None
     ) -> list[ApplyResponse]:
-        """Apply to multiple vacancies matching criteria."""
-        # Search for vacancies
-        search_results = await self.hh_client.list_vacancies(
-            text=request.position,
-            per_page=min(max_applications, 100)
-        )
+        """Apply to multiple vacancies based on search criteria.
 
-        vacancies = search_results.get("items", [])
+        Business Logic:
+        1. Search for matching vacancies
+        2. Apply filters to narrow down candidates
+        3. Process applications with rate limiting
+        4. Track progress and handle errors gracefully
+        """
+        logger.info(f"Starting bulk application for: {request.position}")
+
+        # Initialize filter
+        filter_engine = ApplicationFilter(request)
         results = []
         applied_count = 0
 
-        for vacancy in vacancies:
-            if applied_count >= max_applications:
+        try:
+            # Search for vacancies
+            vacancies = await self._search_vacancies_for_bulk(request, max_applications)
+
+            if not vacancies:
+                logger.warning(f"No vacancies found for: {request.position}")
+                return []
+
+            # Process each vacancy
+            for vacancy in vacancies:
+                if applied_count >= max_applications:
+                    break
+
+                # Apply business filters
+                should_apply, filter_reason = filter_engine.should_apply(vacancy)
+                if not should_apply:
+                    results.append(ApplyResponse(
+                        vacancy_id=vacancy["id"],
+                        status="skipped",
+                        vacancy_title=vacancy.get("name"),
+                        error_detail=f"Filtered: {filter_reason}"
+                    ))
+                    continue
+
+                # Apply to vacancy
+                response = await self.apply_to_single_vacancy(
+                    vacancy["id"], request, user_id
+                )
+                results.append(response)
+
+                if response.status == "success":
+                    applied_count += 1
+                    # Rate limiting - be respectful to HH.ru
+                    await asyncio.sleep(2)
+
+            logger.info(f"Bulk application completed: {applied_count} applications sent")
+            return results
+
+        except Exception as e:
+            logger.error(f"Bulk application failed: {e}")
+            raise
+
+    async def get_application_analytics(
+            self,
+            user_id: str,
+            days: int = 30
+    ) -> dict:
+        """Get application statistics and analytics.
+
+        Business Logic:
+        - Calculate success rates
+        - Track application trends
+        - Identify best-performing strategies
+        """
+        async with async_session() as session:
+            # Query application history
+            # Implementation depends on your database structure
+            pass
+
+    # Private methods for internal business logic
+
+    async def _search_vacancies_for_bulk(
+            self,
+            request: BulkApplyRequest,
+            max_applications: int
+    ) -> list[dict]:
+        """Search and collect vacancies for bulk processing."""
+        all_vacancies = []
+        page = 0
+
+        while len(all_vacancies) < max_applications * 3:  # Get extra for filtering
+            search_results = await self.hh_client.search_vacancies(
+                text=request.position,
+                page=page,
+                per_page=100
+            )
+
+            page_vacancies = search_results.get("items", [])
+            if not page_vacancies:
                 break
 
-            # Apply filters
-            if not self._should_apply_to_vacancy(vacancy, request):
-                results.append(ApplyResponse(
-                    vacancy_id=vacancy["id"],
-                    status="skipped",
-                    vacancy_title=vacancy.get("name", "Unknown"),
-                    error_detail="Filtered out by criteria"
-                ))
-                continue
+            all_vacancies.extend(page_vacancies)
+            page += 1
 
-            try:
-                # Generate and submit application
-                response = await self._apply_to_vacancy(vacancy, request)
-                results.append(response)
-                applied_count += 1
+            if page >= 5:  # Limit search depth
+                break
 
-            except Exception as e:
-                results.append(ApplyResponse(
-                    vacancy_id=vacancy["id"],
-                    status="error",
-                    vacancy_title=vacancy.get("name", "Unknown"),
-                    error_detail=str(e)
-                ))
+        return all_vacancies
 
-        return results
-
-    async def _apply_to_vacancy(
+    async def _generate_application_content(
             self,
             vacancy: dict,
             request: ApplyRequest
-    ) -> ApplyResponse:
-        """Apply to a single vacancy (internal method)."""
-        vacancy_id = vacancy["id"]
+    ) -> dict:
+        """Generate cover letter and answer screening questions."""
+        user_profile = self._build_user_profile(request)
 
-        # Get additional details if needed
-        if "description" not in vacancy:
-            vacancy = await self.hh_client.get_vacancy_details(vacancy_id)
-
-        # Generate application
-        prompt = build_application_prompt(request, vacancy)
-        cover_letter = await self.llm_provider.generate(prompt)
-
-        # Submit application
-        hh_response = await self.hh_client.apply(
-            vacancy_id=vacancy_id,
-            resume_id=request.resume_id,
-            cover_letter=cover_letter
+        # Generate cover letter
+        cover_letter = await self.llm_provider.generate_cover_letter(
+            vacancy, user_profile
         )
 
-        return ApplyResponse(
-            vacancy_id=vacancy_id,
-            status="success",
-            vacancy_title=vacancy.get("name", "Unknown"),
-            cover_letter=cover_letter,
-            hh_response=hh_response
-        )
+        result = {"cover_letter": cover_letter}
 
-    def _should_apply_to_vacancy(
+        # Handle screening questions if present
+        questions = await self.hh_client.get_vacancy_questions(vacancy["id"])
+        if questions:
+            answers = await self.llm_provider.answer_screening_questions(
+                questions, vacancy, user_profile
+            )
+            if answers:
+                result["answers"] = answers
+
+        return result
+
+    def _build_user_profile(self, request: ApplyRequest) -> dict:
+        """Build user profile dictionary for LLM."""
+        return {
+            "experience": request.experience,
+            "skills": request.skills,
+            "resume": request.resume,
+            # Add more fields as needed
+        }
+
+    async def _can_apply_to_vacancy(self, vacancy: dict) -> tuple[bool, str]:
+        """Business rules for determining if we can apply to a vacancy."""
+        if vacancy.get("archived", False):
+            return False, "Vacancy is archived"
+
+        if not vacancy.get("response_url"):
+            return False, "Applications not accepted"
+
+        # Add more business rules here
+        return True, ""
+
+    async def _has_already_applied(
             self,
-            vacancy: dict,
-            request: BulkApplyRequest
+            vacancy_id: str,
+            resume_id: str
     ) -> bool:
-        """Check if we should apply to this vacancy based on filters."""
-        # Check excluded companies
-        if request.exclude_companies:
-            employer_name = vacancy.get("employer", {}).get("name", "").lower()
-            for excluded in request.exclude_companies:
-                if excluded.lower() in employer_name:
-                    return False
+        """Check if we've already applied to this vacancy."""
+        # Implementation depends on your tracking system
+        # Could check database or HH.ru API
+        return False
 
-        # Check salary requirements
-        if request.salary_min:
-            salary = vacancy.get("salary")
-            if salary:
-                salary_from = salary.get("from")
-                if salary_from and salary_from < request.salary_min:
-                    return False
-            else:
-                # No salary info - might want to skip or include based on preferences
-                pass
+    async def _record_application(
+            self,
+            vacancy_id: str,
+            request: ApplyRequest,
+            response: dict,
+            user_id: str | None = None
+    ):
+        """Record application in database for tracking."""
+        async with async_session() as session:
+            application = ApplicationHistory(
+                vacancy_id=vacancy_id,
+                resume_id=request.resume_id,
+                user_id=user_id,
+                applied_at=datetime.utcnow(),
+                hh_response=response
+            )
+            session.add(application)
+            await session.commit()
 
-        # Check remote work requirement
-        if request.remote_only:
-            schedule = vacancy.get("schedule", {}).get("name", "").lower()
-            if "удален" not in schedule and "remote" not in schedule:
-                return False
 
-        return True
+# Factory function for dependency injection
+def create_application_service(
+        hh_client: HHClient,
+        llm_provider: LLMProvider
+) -> ApplicationService:
+    """Factory function to create ApplicationService with dependencies."""
+    return ApplicationService(hh_client, llm_provider)

@@ -1,4 +1,5 @@
 from collections.abc import AsyncGenerator
+
 from fastapi import Depends
 
 from app.services.hh_client import HHClient

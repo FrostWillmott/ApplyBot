@@ -7,7 +7,7 @@ from app.routers.auth import router as auth_router
 app = FastAPI(
     title="ApplyBot",
     description="Automated job application system for hh.ru",
-    version="1.0.0"
+    version="1.0.0",
 )
 
 # Add CORS middleware for development
@@ -31,7 +31,7 @@ async def root():
         "message": "ApplyBot API",
         "version": "1.0.0",
         "docs": "/docs",
-        "status": "active"
+        "status": "active",
     }
 
 
@@ -46,6 +46,7 @@ async def health_check():
 async def startup_event():
     """Initialize database and other services on startup."""
     from app.core.storage import TokenStorage
+
     await TokenStorage.init_models()
 
 

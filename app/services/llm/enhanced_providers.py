@@ -32,9 +32,7 @@ class EnhancedClaudeProvider:
             raise Exception(f"Failed to generate content: {e!s}")
 
     async def generate_cover_letter(
-            self,
-            vacancy: dict[str, Any],
-            user_profile: dict[str, Any]
+        self, vacancy: dict[str, Any], user_profile: dict[str, Any]
     ) -> str:
         """Generate a personalized cover letter"""
         company = vacancy.get("employer", {}).get("name", "the company")
@@ -46,9 +44,12 @@ class EnhancedClaudeProvider:
         description = vacancy.get("description", "")
         if description and "<" in description:
             import re
+
             description = re.sub(r"<[^>]+>", "", description)
 
-        key_skills = [skill.get("name", "") for skill in vacancy.get("key_skills", [])]
+        key_skills = [
+            skill.get("name", "") for skill in vacancy.get("key_skills", [])
+        ]
 
         prompt = f"""Write a professional cover letter for this job application:
 
@@ -61,18 +62,18 @@ JOB REQUIREMENTS:
 KEY RESPONSIBILITIES:
 {responsibilities}
 
-REQUIRED SKILLS: {', '.join(key_skills) if key_skills else 'Not specified'}
+REQUIRED SKILLS: {", ".join(key_skills) if key_skills else "Not specified"}
 
 JOB DESCRIPTION:
 {description[:800]}...
 
 CANDIDATE PROFILE:
-- Name: {user_profile.get('name', 'Candidate')}
-- Experience: {user_profile.get('experience', 'Not specified')}
-- Skills: {user_profile.get('skills', 'Not specified')}
-- Education: {user_profile.get('education', 'Not specified')}
-- Current Position: {user_profile.get('current_position', 'Not specified')}
-- Achievements: {user_profile.get('achievements', 'Not specified')}
+- Name: {user_profile.get("name", "Candidate")}
+- Experience: {user_profile.get("experience", "Not specified")}
+- Skills: {user_profile.get("skills", "Not specified")}
+- Education: {user_profile.get("education", "Not specified")}
+- Current Position: {user_profile.get("current_position", "Not specified")}
+- Achievements: {user_profile.get("achievements", "Not specified")}
 
 INSTRUCTIONS:
 1. Write a concise, professional cover letter (300-400 words)
@@ -90,10 +91,10 @@ Generate ONLY the cover letter text."""
         return await self.generate(prompt)
 
     async def answer_screening_questions(
-            self,
-            questions: list[dict[str, Any]],
-            vacancy: dict[str, Any],
-            user_profile: dict[str, Any]
+        self,
+        questions: list[dict[str, Any]],
+        vacancy: dict[str, Any],
+        user_profile: dict[str, Any],
     ) -> list[dict[str, str]]:
         """Generate answers for screening questions"""
         if not questions:
@@ -106,13 +107,13 @@ Generate ONLY the cover letter text."""
 
         prompt = f"""Answer these job screening questions professionally:
 
-JOB: {vacancy.get('name', 'Position')} at {vacancy.get('employer', {}).get('name', 'Company')}
+JOB: {vacancy.get("name", "Position")} at {vacancy.get("employer", {}).get("name", "Company")}
 
 CANDIDATE PROFILE:
-- Experience: {user_profile.get('experience', 'Not specified')}
-- Skills: {user_profile.get('skills', 'Not specified')}
-- Education: {user_profile.get('education', 'Not specified')}
-- Current Role: {user_profile.get('current_position', 'Not specified')}
+- Experience: {user_profile.get("experience", "Not specified")}
+- Skills: {user_profile.get("skills", "Not specified")}
+- Education: {user_profile.get("education", "Not specified")}
+- Current Role: {user_profile.get("current_position", "Not specified")}
 
 QUESTIONS:
 {questions_text}
@@ -130,9 +131,7 @@ Provide only the numbered answers."""
         return self._parse_screening_answers(response, questions)
 
     def _parse_screening_answers(
-            self,
-            response: str,
-            questions: list[dict[str, Any]]
+        self, response: str, questions: list[dict[str, Any]]
     ) -> list[dict[str, str]]:
         """Parse LLM response into structured answers"""
         import re
@@ -158,9 +157,8 @@ Provide only the numbered answers."""
             if not answer_text:
                 answer_text = "I am very interested in this opportunity and believe my experience would be valuable for this role."
 
-            structured_answers.append({
-                "id": question_id,
-                "answer": answer_text
-            })
+            structured_answers.append(
+                {"id": question_id, "answer": answer_text}
+            )
 
         return structured_answers
