@@ -23,10 +23,6 @@ class Base(DeclarativeBase):
     pass
 
 
-# Import models here to avoid circular imports
-from app.models.token import Token
-
-
 # Token storage utility
 class TokenStorage:
     """Utility class for token operations."""
@@ -38,8 +34,10 @@ class TokenStorage:
             await conn.run_sync(Base.metadata.create_all)
 
     @staticmethod
-    async def save(token_data: dict) -> Token:
+    async def save(token_data: dict) -> "Token":
         """Save a new token, replacing any existing ones."""
+        from app.models.token import Token
+
         async with async_session() as session:
             # Clear previous tokens
             await session.execute(Token.__table__.delete())
@@ -50,8 +48,10 @@ class TokenStorage:
             return tok
 
     @staticmethod
-    async def get_latest() -> Token | None:
+    async def get_latest() -> "Token | None":
         """Get the most recent token."""
+        from app.models.token import Token
+
         async with async_session() as session:
             result = await session.execute(
                 Token.__table__.select()
@@ -59,4 +59,4 @@ class TokenStorage:
                 .limit(1)
             )
             row = result.first()
-            return row[0] if row else None
+            return Token(**row._asdict()) if row else None

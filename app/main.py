@@ -6,9 +6,12 @@ It sets up the app, middleware, routers, and startup/shutdown events.
 """
 
 import logging
+import os
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.staticfiles import StaticFiles
+from fastapi.responses import FileResponse
 
 from app.core.storage import TokenStorage
 from app.routers import apply_router, auth_router
@@ -40,10 +43,19 @@ app.add_middleware(
 app.include_router(auth_router)
 app.include_router(apply_router)
 
+# Mount static files
+app.mount("/static", StaticFiles(directory="app/static"), name="static")
+
 
 @app.get("/")
 async def root():
-    """Root endpoint with API information."""
+    """Serve the frontend application."""
+    return FileResponse("app/static/index.html")
+
+
+@app.get("/api")
+async def api_info():
+    """API information endpoint."""
     return {
         "message": "ApplyBot API",
         "version": "1.0.0",

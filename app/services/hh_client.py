@@ -12,6 +12,19 @@ from app.core.storage import TokenStorage
 
 logger = logging.getLogger(__name__)
 
+DEFAULT_HEADERS = {
+    'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+    'Accept': 'application/json',
+    'Accept-Language': 'ru-RU,ru;q=0.9,en;q=0.8',
+    'Accept-Encoding': 'gzip, deflate, br',
+    'DNT': '1',
+    'Connection': 'keep-alive',
+    'Sec-Fetch-Dest': 'empty',
+    'Sec-Fetch-Mode': 'cors',
+    'Sec-Fetch-Site': 'cross-site',
+    'Upgrade-Insecure-Requests': '1',
+}
+
 
 class HHAPIError(Exception):
     """Custom exception for HH API errors"""
@@ -103,6 +116,10 @@ class HHClient:
         Raises:
             HHAPIError: If the request fails after all retries
         """
+        kwargs.setdefault("headers", {}).update(DEFAULT_HEADERS)
+
+        await asyncio.sleep(random.uniform(0.5, 2.0))
+
         await self._ensure_token()
         await self._rate_limit()
 
@@ -120,7 +137,8 @@ class HHClient:
 
                 # Success case
                 response.raise_for_status()
-                return response
+                return await response.json()
+
 
             except httpx.HTTPStatusError as e:
                 # Don't retry for client errors (4xx) except rate limiting and server unavailable
