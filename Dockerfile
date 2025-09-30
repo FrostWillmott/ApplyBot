@@ -1,17 +1,19 @@
-# ---- Base Builder ----
-FROM python:3.11-slim AS base-builder
+# ---- Builder (runtime only) ----
+FROM python:3.11-slim AS builder
 WORKDIR /app
 
-# Install Poetry + export plugin
+# Install system dependencies
+RUN apt-get update && apt-get install -y \
+    netcat-traditional \
+    && rm -rf /var/lib/apt/lists/*
+
+# install Poetry + export plugin
 RUN pip install poetry \
  && poetry self add poetry-plugin-export
 
 COPY pyproject.toml poetry.lock ./
 
-# ---- Production Builder ----
-FROM base-builder AS prod-builder
-
-# Export runtime deps only
+# export runtime deps only
 RUN poetry export \
       --format=requirements.txt \
       --without-hashes \
@@ -19,10 +21,10 @@ RUN poetry export \
 
 RUN pip install --no-cache-dir -r requirements.txt
 
-# ---- Development Builder ----
-FROM base-builder AS dev-builder
+# ---- Dev-builder (adds dev tools) ----
+FROM builder AS dev-builder
 
-# Export including dev group
+# export including dev group
 RUN poetry export \
       --format=requirements.txt \
       --without-hashes \
@@ -31,34 +33,46 @@ RUN poetry export \
 
 RUN pip install --no-cache-dir -r requirements-dev.txt
 
-# ---- Production Final ----
-FROM python:3.11-slim AS final
+# ---- Dev-final (development image) ----
+FROM dev-builder AS dev-final
 WORKDIR /app
 
-# Copy only production dependencies
-COPY --from=prod-builder /usr/local/lib/python3.11/site-packages/ /usr/local/lib/python3.11/site-packages/
-COPY --from=prod-builder /usr/local/bin/ /usr/local/bin/
+# Install netcat for health checks
+RUN apt-get update && apt-get install -y \
+    netcat-traditional \
+    && rm -rf /var/lib/apt/lists/*
 
-# Copy app code
-COPY . .
-COPY app/entrypoint.sh /app/entrypoint.sh
-RUN chmod +x /app/entrypoint.sh
-
-ENTRYPOINT ["/app/entrypoint.sh"]
-CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "80"]
-
-# ---- Development Final ----
-FROM python:3.11-slim AS dev-final
-WORKDIR /app
-
-# Copy dev dependencies (includes alembic)
+# copy installed dev deps
 COPY --from=dev-builder /usr/local/lib/python3.11/site-packages/ /usr/local/lib/python3.11/site-packages/
-COPY --from=dev-builder /usr/local/bin/ /usr/local/bin/
 
-# Copy app code
-COPY . .
-COPY app/entrypoint.sh /app/entrypoint.sh
+# Copy entrypoint script from root and set permissions
+COPY entrypoint.sh /app/entrypoint.sh
 RUN chmod +x /app/entrypoint.sh
+
+# copy app code
+COPY . .
 
 ENTRYPOINT ["/app/entrypoint.sh"]
 CMD ["uvicorn", "app.main:app", "--reload", "--host", "0.0.0.0", "--port", "80"]
+
+# ---- Final (prod image) ----
+FROM builder AS final
+WORKDIR /app
+
+# Install netcat for health checks
+RUN apt-get update && apt-get install -y \
+    netcat-traditional \
+    && rm -rf /var/lib/apt/lists/*
+
+# copy only your installed runtime deps
+COPY --from=builder /usr/local/lib/python3.11/site-packages/ /usr/local/lib/python3.11/site-packages/
+
+# Copy entrypoint script from root and set permissions
+COPY entrypoint.sh /app/entrypoint.sh
+RUN chmod +x /app/entrypoint.sh
+
+# copy app code
+COPY . .
+
+ENTRYPOINT ["/app/entrypoint.sh"]
+CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "80"]

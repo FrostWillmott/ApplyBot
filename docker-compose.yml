@@ -47,7 +47,7 @@ services:
     volumes:
       - .:/app
     ports:
-      - "8000:80"
+      - "8001:80"
 
   tests:
     build:
@@ -71,11 +71,12 @@ services:
       - POSTGRES_DB=applybot
       - POSTGRES_USER=postgres
       - POSTGRES_PASSWORD=postgres
+      - POSTGRES_HOST_AUTH_METHOD=trust
     volumes:
       - db-data:/var/lib/postgresql/data
     profiles: ["dev", "prod"]
     ports:
-      - "5434:5434"
+      - "5434:5432"
 
   # Redis для RQ
   redis:
@@ -83,7 +84,35 @@ services:
     command: ["redis-server", "--appendonly", "yes"]
     profiles: ["dev", "prod"]
     ports:
-      - "6380:6380"
+      - "6380:6379"
+
+  # Frontend for production
+  frontend:
+    build:
+      context: .
+      dockerfile: Dockerfile.frontend
+    profiles: ["prod"]
+    ports:
+      - "3000:80"
+    environment:
+      - BACKEND_SERVICE=app
+    depends_on:
+      - app
+
+  # Frontend for development
+  frontend_dev:
+    build:
+      context: .
+      dockerfile: Dockerfile.frontend
+    profiles: ["dev"]
+    ports:
+      - "8000:80"
+    volumes:
+      - ./app/static:/usr/share/nginx/html
+    environment:
+      - BACKEND_SERVICE=app_dev
+    depends_on:
+      - app_dev
 
 volumes:
   db-data:
