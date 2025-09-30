@@ -11,7 +11,7 @@
 ### ✅ Работает
 - ✅ OAuth авторизация с hh.ru
 - ✅ Поиск и фильтрация вакансий
-- ✅ Интеграция с Anthropic Claude 4.0 (Opus)
+- ✅ Интеграция с Anthropic Claude 4.0
 - ✅ Базовая архитектура FastAPI + SQLAlchemy
 - ✅ Docker окружение для разработки
 
