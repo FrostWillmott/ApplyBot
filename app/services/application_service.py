@@ -236,7 +236,7 @@ class ApplicationService:
             request: ApplyRequest
     ) -> dict:
         """Generate cover letter and answer screening questions."""
-        user_profile = self._build_user_profile(request)
+        user_profile = await self._build_user_profile(request)
 
         # Generate cover letter
         cover_letter = await self.llm_provider.generate_cover_letter(
@@ -256,12 +256,36 @@ class ApplicationService:
 
         return result
 
-    def _build_user_profile(self, request: ApplyRequest) -> dict:
-        """Build user profile dictionary for LLM."""
+    async def _build_user_profile(self, request: ApplyRequest) -> dict:
+        """Build user profile dictionary for LLM using resume details from HH.ru."""
+        # Fetch resume details from HH.ru
+        resume_details = await self.hh_client.get_resume_details(request.resume_id)
+
+        # Extract relevant information from the resume
+        experience = resume_details.get("experience", [])
+        skills = resume_details.get("skill_set", [])
+        education = resume_details.get("education", {}).get("items", [])
+
+        # Format experience
+        formatted_experience = ""
+        for exp in experience:
+            company = exp.get("company", "")
+            position = exp.get("position", "")
+            start_date = exp.get("start", "")
+            end_date = exp.get("end", "") or "Present"
+            description = exp.get("description", "")
+            formatted_experience += f"{company}, {position}, {start_date} - {end_date}: {description}\n"
+
+        # Format skills
+        formatted_skills = ", ".join([skill.get("name", "") for skill in skills]) if skills else request.skills
+
+        # Use resume information or fall back to request data if not available
         return {
-            "experience": request.experience,
-            "skills": request.skills,
-            "resume": request.resume,
+            "experience": formatted_experience or request.experience,
+            "skills": formatted_skills or request.skills,
+            "resume": resume_details.get("description", "") or request.resume,
+            "education": education,
+            "position": resume_details.get("title", "") or request.position,
             # Add more fields as needed
         }
 

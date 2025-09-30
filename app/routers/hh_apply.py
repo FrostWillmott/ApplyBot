@@ -34,17 +34,44 @@ async def auto_apply(
     3) Генерирует письмо через LLM
     4) Отправляет отклик в HH и собирает результаты
     """
+    # Fetch resume details
+    resume_details = await hh.get_resume_details(req.resume_id)
+
+    # Extract relevant information from the resume
+    experience = resume_details.get("experience", [])
+    skills = resume_details.get("skill_set", [])
+
+    # Format experience
+    formatted_experience = ""
+    for exp in experience:
+        company = exp.get("company", "")
+        position = exp.get("position", "")
+        start_date = exp.get("start", "")
+        end_date = exp.get("end", "") or "Present"
+        description = exp.get("description", "")
+        formatted_experience += f"{company}, {position}, {start_date} - {end_date}: {description}\n"
+
+    # Format skills
+    formatted_skills = ", ".join([skill.get("name", "") for skill in skills]) if skills else req.skills
+
+    # Update request with resume information
+    enhanced_req = req.copy()
+    enhanced_req.experience = formatted_experience or req.experience
+    enhanced_req.skills = formatted_skills or req.skills
+    enhanced_req.resume = resume_details.get("description", "") or req.resume
+    enhanced_req.position = resume_details.get("title", "") or req.position
+
     found = await hh.list_vacancies(
-        text=req.position, page=0, per_page=pages * 20
+        text=enhanced_req.position, page=0, per_page=pages * 20
     )
     items: list[dict[str, Any]] = found.get("items", [])
 
     results = []
     for vac in items:
-        prompt = build_application_prompt(req, vac)
+        prompt = build_application_prompt(enhanced_req, vac)
         letter = await llm.generate(prompt)
         try:
-            await hh.apply(vacancy_id=vac["id"], cover_letter=letter)
+            await hh.apply(vacancy_id=vac["id"], resume_id=req.resume_id, cover_letter=letter)
             results.append({"vacancy_id": vac["id"], "status": "ok"})
         except Exception as e:
             results.append(

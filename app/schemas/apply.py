@@ -6,10 +6,10 @@ from pydantic import BaseModel, Field
 class ApplyRequest(BaseModel):
     """Base request for job applications."""
 
-    position: str = Field(..., description="Target position or job title")
-    resume: str = Field(..., description="Resume summary or content")
-    skills: str = Field(..., description="Relevant skills")
-    experience: str = Field(..., description="Work experience summary")
+    position: str | None = Field(None, description="Target position or job title (optional, will be taken from resume if not provided)")
+    resume: str | None = Field(None, description="Resume summary or content (optional, will be taken from resume if not provided)")
+    skills: str | None = Field(None, description="Relevant skills (optional, will be taken from resume if not provided)")
+    experience: str | None = Field(None, description="Work experience summary (optional, will be taken from resume if not provided)")
     resume_id: str = Field(..., description="HH.ru resume ID for applications")
 
 
