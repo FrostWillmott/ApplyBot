@@ -10,11 +10,10 @@ import os
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.staticfiles import StaticFiles
-from fastapi.responses import FileResponse
 
 from app.core.storage import TokenStorage
-from app.routers import apply_router, auth_router
+from app.routers import auth_router
+from app.routers.mvp import router as mvp_router
 
 # Configure logging
 logging.basicConfig(
@@ -41,16 +40,7 @@ app.add_middleware(
 
 # Include routers
 app.include_router(auth_router)
-app.include_router(apply_router)
-
-# Mount static files
-app.mount("/static", StaticFiles(directory="app/static"), name="static")
-
-
-@app.get("/")
-async def root():
-    """Serve the frontend application."""
-    return FileResponse("app/static/index.html")
+app.include_router(mvp_router)
 
 
 @app.get("/api")
