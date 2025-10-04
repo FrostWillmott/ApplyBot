@@ -330,3 +330,19 @@ poetry run pre-commit run --all-files
 - Письмо — очень простое и одинаковое для всех откликов.
 - Эндпоинты Swagger доступны на /docs
 
+### Автоматический режим (опционально)
+Чтобы включить авто‑режим откликов внутри приложения, задайте переменные окружения:
+
+- ENABLE_AUTO_APPLY=true — включить/выключить фонового работника (по умолчанию: false)
+- AUTO_APPLY_INTERVAL_MIN=15 — как часто запускать поиск/отклики (в минутах)
+- AUTO_DAILY_LIMIT=100 — дневной лимит откликов
+
+Пример запуска в Docker Compose (dev профиль):
+
+```yaml
+environment:
+  - ENABLE_AUTO_APPLY=true
+  - AUTO_APPLY_INTERVAL_MIN=15
+  - AUTO_DAILY_LIMIT=100
+```
+
