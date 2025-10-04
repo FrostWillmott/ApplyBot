@@ -340,16 +340,15 @@ class HHClient:
             self,
             vacancy_id: str,
             resume_id: str,
-            cover_letter: str,
+            cover_letter: str | None = None,
             answers: list[dict] | None = None
     ) -> dict:
-        """Submit application with enhanced validation."""
-        if not cover_letter.strip():
-            raise ValueError("Cover letter cannot be empty")
+        """Submit application."'"""
+        application_data: dict[str, Any] = {}
 
-        application_data = {
-            "cover_letter": cover_letter.strip()
-        }
+        # Include cover_letter only if provided and non-empty
+        if isinstance(cover_letter, str) and cover_letter.strip():
+            application_data["cover_letter"] = cover_letter.strip()
 
         if answers:
             # Validate answers format
@@ -366,11 +365,11 @@ class HHClient:
                 json=application_data
             )
             logger.info(f"Successfully applied to vacancy {vacancy_id}")
-            return response.json()
+            return response  # _make_request already returns JSON
 
         except HHAPIError as e:
             error_messages = {
-                400: "Invalid application data or already applied to this vacancy",
+                400: "Invalid application data or already applied to this vacancy (or cover letter required)",
                 403: "Access denied - you may not be eligible for this vacancy",
                 404: "Vacancy or resume not found",
                 409: "Application already exists for this vacancy"

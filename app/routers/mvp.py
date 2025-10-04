@@ -20,6 +20,7 @@ async def search_python_vacancies(
             text="Python разработчик",
             page=page,
             per_page=per_page,
+            schedule="remote",  # только удалёнка
         )
     except Exception as e:
         raise HTTPException(status_code=502, detail=f"Search failed: {e!s}")
@@ -27,17 +28,18 @@ async def search_python_vacancies(
 
 @router.post("/apply")
 async def apply_to_python_vacancies(
-    limit: int = Query(default=5, ge=1, le=50, description="How many vacancies to apply to"),
+    limit: int = Query(default=100, ge=1, le=100, description="Max vacancies to apply to"),
     page: int = Query(default=0, ge=0),
     per_page: int = Query(default=20, ge=1, le=100),
     hh_client: HHClient = Depends(get_hh_client),
 ):
-    """Search 'Python разработчик' vacancies and apply to the first N.
+    """Search 'Python разработчик' (remote only) and apply to the first N.
 
-    Logic:
-    - Fetch user's resumes and pick the first available one.
-    - Search vacancies by fixed query.
-    - Apply to up to `limit` vacancies with a very simple cover letter.
+    Rules for MVP:
+    - Use the first available resume from the user's account.
+    - Do NOT send cover letters. If HH requires a cover letter, skip that vacancy (record error and continue).
+    - Remote-only vacancies via schedule=remote.
+    - Gracefully handle when fewer than N vacancies are available.
     """
     try:
         # Get first available resume
@@ -47,20 +49,16 @@ async def apply_to_python_vacancies(
             raise HTTPException(status_code=400, detail="Нет доступных резюме в вашем аккаунте hh.ru")
         resume_id = items[0]["id"]
 
-        # Search vacancies
+        # Search vacancies (remote only)
         search = await hh_client.search_vacancies(
             text="Python разработчик",
             page=page,
             per_page=per_page,
+            schedule="remote",
         )
         vacancies = search.get("items", [])
         if not vacancies:
             return {"applied": 0, "results": [], "message": "Вакансии не найдены"}
-
-        # Prepare a very simple cover letter
-        cover_letter = (
-            "Здравствуйте! Я Python-разработчик. Готов обсудить детали и выполнить тестовое задание."
-        )
 
         results: list[dict] = []
         applied_count = 0
@@ -73,7 +71,7 @@ async def apply_to_python_vacancies(
                 resp = await hh_client.apply(
                     vacancy_id=vacancy_id,
                     resume_id=resume_id,
-                    cover_letter=cover_letter,
+                    cover_letter=None,
                     answers=None,
                 )
                 results.append({
@@ -83,9 +81,10 @@ async def apply_to_python_vacancies(
                 })
                 applied_count += 1
             except Exception as apply_err:
+                # Skip and continue on any application error (e.g., cover letter required)
                 results.append({
                     "vacancy_id": vacancy_id,
-                    "status": "error",
+                    "status": "skipped",
                     "error": str(apply_err),
                 })
 
