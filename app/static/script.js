@@ -1,233 +1,425 @@
-// Constants
-// Use relative URL for API requests
-// This works regardless of whether we're running in Docker or not
-const API_BASE_URL = '';
-const AUTH_ENDPOINTS = {
-    login: '/auth/login',
-    callback: '/auth/callback'
-};
-const APPLY_ENDPOINTS = {
-    single: '/apply/single',
-    bulk: '/apply/bulk',
-    search: '/apply/search',
-    analytics: '/apply/analytics'
-};
+const API_BASE_URL = typeof CONFIG !== 'undefined' ? CONFIG.API_BASE_URL : '';
+const AUTH_ENDPOINTS = typeof CONFIG !== 'undefined' ? CONFIG.AUTH_ENDPOINTS : { login: '/auth/login', status: '/auth/status' };
+const APPLY_ENDPOINTS = typeof CONFIG !== 'undefined' ? CONFIG.APPLY_ENDPOINTS : { bulk: '/apply/bulk' };
+const HH_ENDPOINTS = typeof CONFIG !== 'undefined' ? CONFIG.HH_ENDPOINTS : { profile: '/hh/profile', resumes: '/hh/resumes' };
+const HH_DAILY_LIMIT = typeof CONFIG !== 'undefined' ? CONFIG.HH_LIMITS.DAILY_LIMIT : 200;
+const HH_WARNING_THRESHOLD = typeof CONFIG !== 'undefined' ? CONFIG.HH_LIMITS.WARNING_THRESHOLD : 150;
+const HH_MAX_PER_REQUEST = typeof CONFIG !== 'undefined' ? CONFIG.HH_LIMITS.MAX_PER_REQUEST : 50;
 
-// DOM Elements
+function getTodayKey() {
+    const today = new Date();
+    return `applybot_daily_${today.getFullYear()}-${today.getMonth() + 1}-${today.getDate()}`;
+}
+
+function getDailyCount() {
+    const key = getTodayKey();
+    const stored = localStorage.getItem(key);
+    return stored ? parseInt(stored, 10) : 0;
+}
+
+function incrementDailyCount(count) {
+    const key = getTodayKey();
+    const current = getDailyCount();
+    const newCount = current + count;
+    localStorage.setItem(key, newCount.toString());
+    
+    // Clean up old keys (older than 7 days)
+    cleanupOldKeys();
+    
+    return newCount;
+}
+
+function cleanupOldKeys() {
+    const today = new Date();
+    for (let i = 0; i < localStorage.length; i++) {
+        const key = localStorage.key(i);
+        if (key && key.startsWith('applybot_daily_') && key !== getTodayKey()) {
+            const datePart = key.replace('applybot_daily_', '');
+            const keyDate = new Date(datePart);
+            const diffDays = (today - keyDate) / (1000 * 60 * 60 * 24);
+            if (diffDays > 7) {
+                localStorage.removeItem(key);
+            }
+        }
+    }
+}
+
+function playCompletionSound() {
+    try {
+        const audioContext = new (window.AudioContext || window.webkitAudioContext)();
+        const oscillator = audioContext.createOscillator();
+        const gainNode = audioContext.createGain();
+        
+        oscillator.connect(gainNode);
+        gainNode.connect(audioContext.destination);
+        
+        oscillator.frequency.value = 800;
+        oscillator.type = 'sine';
+        gainNode.gain.value = 0.3;
+        
+        oscillator.start();
+        setTimeout(() => {
+            oscillator.stop();
+            audioContext.close();
+        }, 200);
+    } catch (e) {
+        // Audio not available
+    }
+}
+
+function showCompletionAlert(successCount, totalCount) {
+    const safeSuccessCount = parseInt(successCount, 10) || 0;
+    const safeTotalCount = parseInt(totalCount, 10) || 0;
+
+    if (Notification.permission === 'granted') {
+        new Notification('ApplyBot - Завершено!', {
+            body: `Отправлено ${safeSuccessCount} из ${safeTotalCount} откликов`,
+            icon: '📋'
+        });
+    } else if (Notification.permission !== 'denied') {
+        Notification.requestPermission();
+    }
+
+    playCompletionSound();
+
+    let originalTitle = document.title;
+    let flashCount = 0;
+    const flashInterval = setInterval(() => {
+        document.title = flashCount % 2 === 0 ? `✅ Готово! (${safeSuccessCount})` : originalTitle;
+        flashCount++;
+        if (flashCount > 6) {
+            clearInterval(flashInterval);
+            document.title = originalTitle;
+        }
+    }, 500);
+}
+
+function escapeHtml(text) {
+    if (text === null || text === undefined) return '';
+    const div = document.createElement('div');
+    div.textContent = String(text);
+    return div.innerHTML;
+}
+
 document.addEventListener('DOMContentLoaded', () => {
-    // Auth elements
     const loginBtn = document.getElementById('login-btn');
     const authStatus = document.getElementById('auth-status');
     const authStatusText = document.getElementById('auth-status-text');
-
-    // Search elements
-    const searchText = document.getElementById('search-text');
-    const searchPage = document.getElementById('search-page');
-    const searchPerPage = document.getElementById('search-per-page');
-    const searchBtn = document.getElementById('search-btn');
-    const searchResults = document.getElementById('search-results');
-    const resultsList = document.getElementById('results-list');
-    const prevPageBtn = document.getElementById('prev-page');
-    const nextPageBtn = document.getElementById('next-page');
-    const pageInfo = document.getElementById('page-info');
-
-    // Apply elements - Single
-    const vacancyId = document.getElementById('vacancy-id');
     const position = document.getElementById('position');
     const resume = document.getElementById('resume');
     const skills = document.getElementById('skills');
     const experience = document.getElementById('experience');
     const resumeId = document.getElementById('resume-id');
-    const applySingleBtn = document.getElementById('apply-single-btn');
-
-    // Apply elements - Bulk
-    const bulkPosition = document.getElementById('bulk-position');
-    const bulkResume = document.getElementById('bulk-resume');
-    const bulkSkills = document.getElementById('bulk-skills');
-    const bulkExperience = document.getElementById('bulk-experience');
-    const bulkResumeId = document.getElementById('bulk-resume-id');
+    const resumeSelect = document.getElementById('resume-select');
     const excludeCompanies = document.getElementById('exclude-companies');
     const salaryMin = document.getElementById('salary-min');
     const remoteOnly = document.getElementById('remote-only');
+    const useAiAssistant = document.getElementById('use-ai-assistant');
     const experienceLevel = document.getElementById('experience-level');
     const maxApplications = document.getElementById('max-applications');
-    const applyBulkBtn = document.getElementById('apply-bulk-btn');
-
-    // Apply results
+    const applyBtn = document.getElementById('apply-btn');
+    const loadProfileBtn = document.getElementById('load-profile-btn');
     const applyResults = document.getElementById('apply-results');
     const applyResultsList = document.getElementById('apply-results-list');
+    const progressSection = document.getElementById('progress-section');
+    const progressText = document.getElementById('progress-text');
+    const progressBar = document.getElementById('progress-bar');
+    const progressEta = document.getElementById('progress-eta');
+    const dailyCountEl = document.getElementById('daily-count');
+    const dailyCounter = document.getElementById('daily-counter');
 
-    // Analytics elements
-    const userId = document.getElementById('user-id');
-    const days = document.getElementById('days');
-    const analyticsBtn = document.getElementById('analytics-btn');
-    const analyticsResults = document.getElementById('analytics-results');
-    const analyticsData = document.getElementById('analytics-data');
-
-    // Tab switching
-    const tabBtns = document.querySelectorAll('.tab-btn');
-    const tabContents = document.querySelectorAll('.tab-content');
-
-    tabBtns.forEach(btn => {
-        btn.addEventListener('click', () => {
-            const tabName = btn.getAttribute('data-tab');
-
-            // Update active tab button
-            tabBtns.forEach(b => b.classList.remove('active'));
-            btn.classList.add('active');
-
-            // Show active tab content
-            tabContents.forEach(content => {
-                content.classList.remove('active');
-                if (content.id === `${tabName}-tab`) {
-                    content.classList.add('active');
-                }
-            });
-        });
-    });
+    updateDailyCounterDisplay();
+    
+    function updateDailyCounterDisplay() {
+        const count = getDailyCount();
+        dailyCountEl.textContent = count;
+        
+        // Update color based on count
+        if (count >= HH_DAILY_LIMIT) {
+            dailyCountEl.style.color = '#f44336';
+            dailyCounter.style.background = '#ffebee';
+            applyBtn.disabled = true;
+            applyBtn.textContent = '🚫 Дневной лимит достигнут';
+            applyBtn.style.background = '#ccc';
+        } else if (count >= HH_WARNING_THRESHOLD) {
+            dailyCountEl.style.color = '#ff9800';
+            dailyCounter.style.background = '#fff3e0';
+        } else {
+            dailyCountEl.style.color = '#4CAF50';
+            dailyCounter.style.background = '#f5f5f5';
+        }
+    }
+    
+    function isDailyLimitReached() {
+        return getDailyCount() >= HH_DAILY_LIMIT;
+    }
 
     // Event Listeners
     loginBtn.addEventListener('click', handleLogin);
-    searchBtn.addEventListener('click', handleSearch);
-    prevPageBtn.addEventListener('click', () => handlePageChange(-1));
-    nextPageBtn.addEventListener('click', () => handlePageChange(1));
-    applySingleBtn.addEventListener('click', handleSingleApply);
-    applyBulkBtn.addEventListener('click', handleBulkApply);
-    analyticsBtn.addEventListener('click', handleAnalytics);
+    applyBtn.addEventListener('click', handleBulkApply);
+    loadProfileBtn.addEventListener('click', loadProfileFromHH);
+    resumeSelect.addEventListener('change', handleResumeSelect);
+    checkAuthStatus();
 
-    // Check if we're returning from auth callback
-    checkAuthCallback();
-
-    // Functions
     function handleLogin() {
         window.location.href = API_BASE_URL + AUTH_ENDPOINTS.login;
     }
 
-    function checkAuthCallback() {
-        // Check if URL contains code and state parameters
-        const urlParams = new URLSearchParams(window.location.search);
-        const code = urlParams.get('code');
-        const state = urlParams.get('state');
-
-        if (code && state) {
-            // We're in the callback, show auth status
-            authStatus.classList.remove('hidden');
-            authStatusText.textContent = 'Authenticating...';
-
-            // Clear URL parameters without reloading page
-            window.history.replaceState({}, document.title, window.location.pathname);
-
-            // Authentication was handled by the backend redirect
-            authStatusText.textContent = 'Authenticated';
+    function handleResumeSelect() {
+        const selectedValue = resumeSelect.value;
+        resumeId.value = selectedValue;
+        
+        if (selectedValue) {
+            loadUserProfileFromHH(selectedValue).then(profile => {
+                populateFormFields(profile);
+                showNotification('Profile loaded with selected resume!', 'success');
+            }).catch(() => {});
         }
     }
 
-    async function handleSearch() {
+    async function loadResumes() {
         try {
-            const query = searchText.value.trim();
-            if (!query) {
-                alert('Please enter a search query');
-                return;
-            }
-
-            const page = parseInt(searchPage.value) || 0;
-            const perPage = parseInt(searchPerPage.value) || 20;
-
-            const url = `${API_BASE_URL}${APPLY_ENDPOINTS.search}?text=${encodeURIComponent(query)}&page=${page}&per_page=${perPage}`;
-
-            // Show loading state
-            searchBtn.textContent = 'Searching...';
-            searchBtn.disabled = true;
-
-            const response = await fetch(url);
-            if (!response.ok) {
-                throw new Error(`Search failed: ${response.status} ${response.statusText}`);
-            }
-
-            const data = await response.json();
-            displaySearchResults(data, page);
-
-        } catch (error) {
-            console.error('Search error:', error);
-            alert(`Search failed: ${error.message}`);
-        } finally {
-            // Reset button state
-            searchBtn.textContent = 'Search';
-            searchBtn.disabled = false;
-        }
-    }
-
-    function displaySearchResults(data, currentPage) {
-        // Clear previous results
-        resultsList.innerHTML = '';
-
-        // Check if we have items
-        if (!data.items || data.items.length === 0) {
-            resultsList.innerHTML = '<p>No results found</p>';
-            searchResults.classList.remove('hidden');
-            return;
-        }
-
-        // Create result items
-        data.items.forEach(item => {
-            const resultItem = document.createElement('div');
-            resultItem.className = 'result-item';
-
-            // Format salary if available
-            let salaryText = 'Salary not specified';
-            if (item.salary) {
-                salaryText = `${item.salary.from || ''} - ${item.salary.to || ''} ${item.salary.currency || ''}`;
-            }
-
-            resultItem.innerHTML = `
-                <h4>${item.name}</h4>
-                <p><strong>Company:</strong> ${item.employer?.name || 'Unknown'}</p>
-                <p><strong>Salary:</strong> ${salaryText}</p>
-                <p><strong>Location:</strong> ${item.area?.name || 'Not specified'}</p>
-                <p><strong>ID:</strong> ${item.id}</p>
-                <button class="btn small primary apply-from-search" data-id="${item.id}">Apply</button>
-                <a href="${item.alternate_url}" target="_blank" class="btn small secondary">View on HH</a>
-            `;
-
-            resultsList.appendChild(resultItem);
-        });
-
-        // Add event listeners to apply buttons
-        document.querySelectorAll('.apply-from-search').forEach(btn => {
-            btn.addEventListener('click', () => {
-                const id = btn.getAttribute('data-id');
-                vacancyId.value = id;
-                document.getElementById('apply-section').scrollIntoView({ behavior: 'smooth' });
+            const response = await fetch(API_BASE_URL + HH_ENDPOINTS.resumes, {
+                method: 'GET',
+                credentials: 'include'
             });
-        });
 
-        // Update pagination
-        pageInfo.textContent = `Page ${currentPage + 1} of ${Math.ceil(data.found / data.per_page)}`;
-        prevPageBtn.disabled = currentPage === 0;
-        nextPageBtn.disabled = (currentPage + 1) * data.per_page >= data.found;
+            if (!response.ok) {
+                throw new Error('Failed to load resumes');
+            }
 
-        // Show results section
-        searchResults.classList.remove('hidden');
-    }
+            const resumes = await response.json();
+            
+            // Clear existing options
+            resumeSelect.innerHTML = '';
 
-    function handlePageChange(direction) {
-        const currentPage = parseInt(searchPage.value) || 0;
-        const newPage = currentPage + direction;
-
-        if (newPage >= 0) {
-            searchPage.value = newPage;
-            handleSearch();
-        }
-    }
-
-    async function handleSingleApply() {
-        try {
-            const id = vacancyId.value.trim();
-            if (!id) {
-                alert('Please enter a vacancy ID');
+            if (resumes.length === 0) {
+                const option = document.createElement('option');
+                option.value = '';
+                option.textContent = '-- No resumes found --';
+                resumeSelect.appendChild(option);
+                resumeSelect.disabled = true;
                 return;
             }
 
+            const placeholder = document.createElement('option');
+            placeholder.value = '';
+            placeholder.textContent = '-- Select a resume --';
+            resumeSelect.appendChild(placeholder);
+
+            resumes.forEach(r => {
+                const option = document.createElement('option');
+                option.value = r.id;
+                option.textContent = `${r.title} (${r.status})`;
+                resumeSelect.appendChild(option);
+            });
+
+            resumeSelect.disabled = false;
+
+            if (resumes.length === 1) {
+                resumeSelect.value = resumes[0].id;
+                resumeId.value = resumes[0].id;
+            }
+            
+            return resumes;
+        } catch (error) {
+            resumeSelect.innerHTML = '<option value="">-- Error loading resumes --</option>';
+            resumeSelect.disabled = true;
+            return [];
+        }
+    }
+
+    async function checkAuthStatus() {
+        try {
+            const response = await fetch(API_BASE_URL + AUTH_ENDPOINTS.status, {
+                method: 'GET',
+                credentials: 'include'
+            });
+
+            if (response.ok) {
+                const data = await response.json();
+                authStatus.classList.remove('hidden');
+
+                if (data.authenticated) {
+                    const userName = data.first_name 
+                        ? `${data.first_name} ${data.last_name || ''}`.trim()
+                        : (data.email || 'User');
+                    authStatusText.textContent = `Authenticated as ${userName}`;
+                    authStatusText.style.color = '#4CAF50';
+                    loginBtn.textContent = 'Re-login with HeadHunter';
+                    loginBtn.classList.remove('primary');
+                    loginBtn.classList.add('secondary');
+
+                    loadResumes().then(resumes => {
+                        if (resumes && resumes.length > 0) {
+                            const selectedResumeId = resumeSelect.value || resumes[0].id;
+                            if (selectedResumeId) {
+                                resumeId.value = selectedResumeId;
+                                loadUserProfileFromHH(selectedResumeId).then(profile => {
+                                    populateFormFields(profile);
+                                }).catch(() => {});
+                            }
+                        }
+                    });
+                } else {
+                    authStatusText.textContent = 'Not authenticated';
+                    authStatusText.style.color = '#f44336';
+                }
+            }
+        } catch (error) {
+            authStatus.classList.remove('hidden');
+            authStatusText.textContent = 'Not authenticated';
+            authStatusText.style.color = '#f44336';
+        }
+    }
+
+    async function loadUserProfileFromHH(selectedResumeId = null) {
+        let url = API_BASE_URL + HH_ENDPOINTS.profile;
+        if (selectedResumeId) {
+            url += `?resume_id=${encodeURIComponent(selectedResumeId)}`;
+        }
+        
+        const response = await fetch(url, {
+            method: 'GET',
+            headers: {
+                'Accept': 'application/json',
+                'Content-Type': 'application/json'
+            },
+            credentials: 'include'
+        });
+
+        if (!response.ok) {
+            if (response.status === 401) {
+                throw new Error('Please authenticate with HH.ru first. Click "Login with HeadHunter"');
+            }
+            throw new Error('Failed to load profile from HH.ru');
+        }
+
+        const profile = await response.json();
+        localStorage.setItem('hhProfile', JSON.stringify(profile));
+        return profile;
+    }
+
+    async function loadProfileFromHH(event) {
+        const btn = event.target;
+        const originalText = btn.textContent;
+        btn.disabled = true;
+        btn.textContent = 'Loading...';
+
+        try {
+            // Use selected resume if available
+            const selectedResumeId = resumeSelect.value || null;
+            const profile = await loadUserProfileFromHH(selectedResumeId);
+            populateFormFields(profile);
+            showNotification('Profile loaded successfully from HH.ru!', 'success');
+        } catch (error) {
+            const safeMessage = error.message && error.message.includes('authenticate')
+                ? 'Please authenticate with HH.ru first. Click "Login with HeadHunter"'
+                : 'Failed to load profile. Please try again.';
+            showNotification(safeMessage, 'error');
+        } finally {
+            btn.disabled = false;
+            btn.textContent = originalText;
+        }
+    }
+
+    function populateFormFields(profile) {
+        if (position && profile.resume?.title) {
+            position.value = profile.resume.title;
+        }
+
+        if (skills && profile.skills?.length > 0) {
+            skills.value = profile.skills.join(', ');
+        }
+
+        if (experience && profile.experience?.length > 0) {
+            const experienceText = profile.experience.map(exp => {
+                const endDate = exp.end || 'Present';
+                let text = `${exp.position} at ${exp.company} (${exp.start} - ${endDate})`;
+                if (exp.description) {
+                    text += `\n${exp.description}`;
+                }
+                return text;
+            }).join('\n\n');
+            experience.value = experienceText;
+        }
+
+        if (resumeId && profile.resume?.id) {
+            resumeId.value = profile.resume.id;
+        }
+
+        if (resume) {
+            let resumeText = '';
+
+            if (profile.resume?.title) {
+                resumeText += `Position: ${profile.resume.title}\n\n`;
+            }
+
+            if (profile.skills?.length > 0) {
+                resumeText += `Skills: ${profile.skills.join(', ')}\n\n`;
+            }
+
+            if (profile.education?.level) {
+                resumeText += `Education: ${profile.education.level}\n`;
+                if (profile.education.primary?.length > 0) {
+                    profile.education.primary.forEach(edu => {
+                        resumeText += `- ${edu.organization || edu.name} (${edu.year || 'N/A'})\n`;
+                    });
+                }
+                resumeText += '\n';
+            }
+
+            if (profile.languages?.length > 0) {
+                resumeText += `Languages: ${profile.languages.map(l => `${l.name} (${l.level})`).join(', ')}\n`;
+            }
+
+            resume.value = resumeText.trim();
+        }
+    }
+
+    function showNotification(message, type = 'info') {
+        const existingNotifications = document.querySelectorAll('.notification');
+        existingNotifications.forEach(n => n.remove());
+
+        // Validate type against allowlist to prevent CSS class injection
+        const validTypes = ['success', 'error', 'warning', 'info'];
+        const safeType = validTypes.includes(type) ? type : 'info';
+
+        const notification = document.createElement('div');
+        notification.className = `notification notification-${safeType}`;
+        notification.textContent = String(message);
+
+        const bgColors = {
+            success: '#4CAF50',
+            error: '#f44336',
+            warning: '#ff9800',
+            info: '#2196F3'
+        };
+
+        notification.style.cssText = `
+            position: fixed;
+            top: 20px;
+            right: 20px;
+            padding: 15px 20px;
+            background: ${bgColors[safeType]};
+            color: white;
+            border-radius: 4px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.2);
+            z-index: 10000;
+            max-width: 400px;
+            animation: slideIn 0.3s ease-out;
+        `;
+
+        document.body.appendChild(notification);
+
+        setTimeout(() => {
+            notification.style.animation = 'slideOut 0.3s ease-out';
+            setTimeout(() => notification.remove(), 300);
+        }, 5000);
+    }
+
+    async function handleBulkApply() {
+        try {
             const requestData = {
                 position: position.value.trim(),
                 resume: resume.value.trim(),
@@ -236,7 +428,6 @@ document.addEventListener('DOMContentLoaded', () => {
                 resume_id: resumeId.value.trim()
             };
 
-            // Validate required fields
             for (const [key, value] of Object.entries(requestData)) {
                 if (!value) {
                     alert(`Please fill in the ${key.replace('_', ' ')} field`);
@@ -244,56 +435,6 @@ document.addEventListener('DOMContentLoaded', () => {
                 }
             }
 
-            // Show loading state
-            applySingleBtn.textContent = 'Applying...';
-            applySingleBtn.disabled = true;
-
-            const url = `${API_BASE_URL}${APPLY_ENDPOINTS.single}/${id}`;
-            const response = await fetch(url, {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json'
-                },
-                body: JSON.stringify(requestData)
-            });
-
-            if (!response.ok) {
-                const errorData = await response.json();
-                throw new Error(errorData.detail || `Application failed: ${response.status} ${response.statusText}`);
-            }
-
-            const data = await response.json();
-            displayApplyResults([data]);
-
-        } catch (error) {
-            console.error('Apply error:', error);
-            alert(`Application failed: ${error.message}`);
-        } finally {
-            // Reset button state
-            applySingleBtn.textContent = 'Apply';
-            applySingleBtn.disabled = false;
-        }
-    }
-
-    async function handleBulkApply() {
-        try {
-            const requestData = {
-                position: bulkPosition.value.trim(),
-                resume: bulkResume.value.trim(),
-                skills: bulkSkills.value.trim(),
-                experience: bulkExperience.value.trim(),
-                resume_id: bulkResumeId.value.trim()
-            };
-
-            // Validate required fields
-            for (const [key, value] of Object.entries(requestData)) {
-                if (!value) {
-                    alert(`Please fill in the ${key.replace('_', ' ')} field`);
-                    return;
-                }
-            }
-
-            // Add optional fields
             if (excludeCompanies.value.trim()) {
                 requestData.exclude_companies = excludeCompanies.value.split(',').map(c => c.trim());
             }
@@ -303,149 +444,182 @@ document.addEventListener('DOMContentLoaded', () => {
             }
 
             requestData.remote_only = remoteOnly.checked;
+            requestData.use_cover_letter = useAiAssistant.checked;
 
             if (experienceLevel.value) {
                 requestData.experience_level = experienceLevel.value;
             }
 
-            // Show loading state
-            applyBulkBtn.textContent = 'Applying...';
-            applyBulkBtn.disabled = true;
+            let max = parseInt(maxApplications.value) || 10;
+            if (max < 1) max = 1;
+            if (max > HH_MAX_PER_REQUEST) max = HH_MAX_PER_REQUEST;
+            maxApplications.value = max;
 
-            const max = parseInt(maxApplications.value) || 20;
-            const url = `${API_BASE_URL}${APPLY_ENDPOINTS.bulk}?max_applications=${max}`;
-
-            const response = await fetch(url, {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json'
-                },
-                body: JSON.stringify(requestData)
-            });
-
-            if (!response.ok) {
-                const errorData = await response.json();
-                throw new Error(errorData.detail || `Bulk application failed: ${response.status} ${response.statusText}`);
+            if (isDailyLimitReached()) {
+                showNotification('🚫 Дневной лимит HH.ru (200 откликов) достигнут. Попробуйте завтра.', 'error');
+                return;
             }
 
-            const data = await response.json();
-            displayApplyResults(data);
+            const currentDailyCount = getDailyCount();
+            const remaining = HH_DAILY_LIMIT - currentDailyCount;
+            if (max > remaining) {
+                max = remaining;
+                maxApplications.value = max;
+                showNotification(`Ограничено до ${max} откликов (дневной лимит)`, 'warning');
+            }
+
+            const timingConfig = typeof CONFIG !== 'undefined' ? CONFIG.TIMING : { WITH_COVER_LETTER: 15, WITHOUT_COVER_LETTER: 2 };
+            const timePerApp = useAiAssistant.checked ? timingConfig.WITH_COVER_LETTER : timingConfig.WITHOUT_COVER_LETTER;
+            const estimatedTime = max * timePerApp;
+            const estimatedMinutes = Math.ceil(estimatedTime / 60);
+
+            applyBtn.textContent = 'Applying...';
+            applyBtn.disabled = true;
+
+            progressSection.classList.remove('hidden');
+            progressBar.style.width = '0%';
+            progressText.textContent = `Starting bulk application (0/${max})...`;
+            progressEta.textContent = `Estimated time: ~${estimatedMinutes} min`;
+
+            let progressInterval = null;
+            let currentProgress = 0;
+            progressInterval = setInterval(() => {
+                if (currentProgress < 95) {
+                    currentProgress += (100 / max) * 0.5; // Slow progress simulation
+                    progressBar.style.width = Math.min(currentProgress, 95) + '%';
+                    const estimated = Math.floor(currentProgress / (100 / max));
+                    progressText.textContent = `Processing applications (~${estimated}/${max})...`;
+                }
+            }, timePerApp * 500);
+
+            const url = `${API_BASE_URL}${APPLY_ENDPOINTS.bulk}?max_applications=${max}`;
+
+            const controller = new AbortController();
+            const timeoutId = setTimeout(() => controller.abort(), 600000);
+
+            try {
+                const response = await fetch(url, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify(requestData),
+                    signal: controller.signal
+                });
+
+                clearTimeout(timeoutId);
+                clearInterval(progressInterval);
+
+                if (!response.ok) {
+                    const errorData = await response.json();
+                    throw new Error(errorData.detail || `Bulk application failed: ${response.status}`);
+                }
+
+                const data = await response.json();
+
+                progressBar.style.width = '100%';
+                const results = Array.isArray(data) ? data : [];
+                const successCount = parseInt(results.filter(r => r && r.status === 'success').length, 10) || 0;
+                const totalCount = parseInt(results.length, 10) || 0;
+                progressText.textContent = `Completed! ${successCount}/${totalCount} applications sent successfully.`;
+                progressEta.textContent = '';
+
+                if (successCount > 0) {
+                    incrementDailyCount(successCount);
+                    updateDailyCounterDisplay();
+                }
+
+                displayApplyResults(results);
+                showNotification(`Successfully sent ${successCount} applications!`, 'success');
+                showCompletionAlert(successCount, totalCount);
+
+            } catch (fetchError) {
+                clearInterval(progressInterval);
+                if (fetchError.name === 'AbortError') {
+                    progressText.textContent = 'Request timed out. Applications may still be processing on the server.';
+                    progressEta.textContent = 'Check your HH.ru account for results.';
+                    showNotification('Request timed out but applications may have been sent. Check HH.ru.', 'warning');
+                } else {
+                    throw fetchError;
+                }
+            }
 
         } catch (error) {
-            console.error('Bulk apply error:', error);
-            alert(`Bulk application failed: ${error.message}`);
+            progressSection.classList.add('hidden');
+            showNotification('Bulk application failed. Please try again.', 'error');
         } finally {
-            // Reset button state
-            applyBulkBtn.textContent = 'Apply to Multiple Jobs';
-            applyBulkBtn.disabled = false;
+            if (!isDailyLimitReached()) {
+                applyBtn.textContent = 'Apply to Multiple Jobs';
+                applyBtn.disabled = false;
+                applyBtn.style.background = '';
+            }
+            updateDailyCounterDisplay();
         }
     }
 
     function displayApplyResults(results) {
-        // Clear previous results
         applyResultsList.innerHTML = '';
 
-        // Check if we have results
         if (!results || results.length === 0) {
-            applyResultsList.innerHTML = '<p>No application results</p>';
+            const noResults = document.createElement('p');
+            noResults.textContent = 'No application results';
+            applyResultsList.appendChild(noResults);
             applyResults.classList.remove('hidden');
             return;
         }
 
-        // Create result items
+        // Allowlist of valid status values for CSS classes
+        const validStatuses = ['success', 'error', 'pending', 'failed', 'skipped'];
+
         results.forEach(result => {
             const resultItem = document.createElement('div');
-            resultItem.className = `result-item ${result.status}`;
+            // Validate status against allowlist to prevent CSS class injection
+            const safeStatus = validStatuses.includes(result.status) ? result.status : '';
+            resultItem.className = `result-item ${safeStatus}`;
 
-            let content = `
-                <h4>${result.vacancy_title || 'Vacancy'} (ID: ${result.vacancy_id})</h4>
-                <p><strong>Status:</strong> ${result.status}</p>
-            `;
+            const title = document.createElement('h4');
+            title.textContent = `${result.vacancy_title || 'Vacancy'} (ID: ${result.vacancy_id})`;
+            resultItem.appendChild(title);
+
+            const statusP = document.createElement('p');
+            const statusStrong = document.createElement('strong');
+            statusStrong.textContent = 'Status: ';
+            statusP.appendChild(statusStrong);
+            statusP.appendChild(document.createTextNode(result.status || 'Unknown'));
+            resultItem.appendChild(statusP);
 
             if (result.error_detail) {
-                content += `<p><strong>Error:</strong> ${result.error_detail}</p>`;
+                const errorP = document.createElement('p');
+                const errorStrong = document.createElement('strong');
+                errorStrong.textContent = 'Error: ';
+                errorP.appendChild(errorStrong);
+                errorP.appendChild(document.createTextNode(result.error_detail));
+                resultItem.appendChild(errorP);
             }
 
             if (result.cover_letter) {
-                content += `
-                    <details>
-                        <summary>Cover Letter</summary>
-                        <div class="cover-letter">${result.cover_letter.replace(/\n/g, '<br>')}</div>
-                    </details>
-                `;
+                const details = document.createElement('details');
+                const summary = document.createElement('summary');
+                summary.textContent = 'Cover Letter';
+                details.appendChild(summary);
+
+                const coverLetterDiv = document.createElement('div');
+                coverLetterDiv.className = 'cover-letter';
+                const lines = String(result.cover_letter).split('\n');
+                lines.forEach((line, index) => {
+                    coverLetterDiv.appendChild(document.createTextNode(line));
+                    if (index < lines.length - 1) {
+                        coverLetterDiv.appendChild(document.createElement('br'));
+                    }
+                });
+                details.appendChild(coverLetterDiv);
+                resultItem.appendChild(details);
             }
 
-            resultItem.innerHTML = content;
             applyResultsList.appendChild(resultItem);
         });
 
-        // Show results section
         applyResults.classList.remove('hidden');
         applyResults.scrollIntoView({ behavior: 'smooth' });
-    }
-
-    async function handleAnalytics() {
-        try {
-            const id = userId.value.trim();
-            if (!id) {
-                alert('Please enter a user ID');
-                return;
-            }
-
-            const daysValue = parseInt(days.value) || 30;
-
-            // Show loading state
-            analyticsBtn.textContent = 'Loading...';
-            analyticsBtn.disabled = true;
-
-            const url = `${API_BASE_URL}${APPLY_ENDPOINTS.analytics}/${id}?days=${daysValue}`;
-            const response = await fetch(url);
-
-            if (!response.ok) {
-                const errorData = await response.json();
-                throw new Error(errorData.detail || `Analytics failed: ${response.status} ${response.statusText}`);
-            }
-
-            const data = await response.json();
-            displayAnalytics(data);
-
-        } catch (error) {
-            console.error('Analytics error:', error);
-            alert(`Analytics failed: ${error.message}`);
-        } finally {
-            // Reset button state
-            analyticsBtn.textContent = 'Get Analytics';
-            analyticsBtn.disabled = false;
-        }
-    }
-
-    function displayAnalytics(data) {
-        // Clear previous results
-        analyticsData.innerHTML = '';
-
-        // Create analytics display
-        const analyticsCard = document.createElement('div');
-        analyticsCard.className = 'analytics-card';
-
-        let content = `
-            <h4>Application Statistics</h4>
-            <p><strong>Total Applications:</strong> ${data.total_applications || 0}</p>
-            <p><strong>Success Rate:</strong> ${data.success_rate || 0}%</p>
-            <p><strong>Average Applications Per Day:</strong> ${data.avg_applications_per_day || 0}</p>
-        `;
-
-        if (data.applications_by_status) {
-            content += '<h4>Applications by Status</h4><ul>';
-            for (const [status, count] of Object.entries(data.applications_by_status)) {
-                content += `<li>${status}: ${count}</li>`;
-            }
-            content += '</ul>';
-        }
-
-        analyticsCard.innerHTML = content;
-        analyticsData.appendChild(analyticsCard);
-
-        // Show results section
-        analyticsResults.classList.remove('hidden');
     }
 });

@@ -3,19 +3,17 @@ from typing import Any
 
 
 class LLMProvider(ABC):
-    """Base class for LLM providers with enhanced job application methods"""
+    """Base class for LLM providers."""
 
     @abstractmethod
     async def generate(self, prompt: str) -> str:
         """Generate text from a prompt."""
         pass
 
-    # New abstract methods for job applications
     async def generate_cover_letter(
         self, vacancy: dict[str, Any], user_profile: dict[str, Any]
     ) -> str:
-        """Generate a personalized cover letter for a job vacancy."""
-        # Default implementation using generate method
+        """Generate a cover letter for a job vacancy."""
         company = vacancy.get("employer", {}).get("name", "the company")
         position = vacancy.get("name", "this position")
 
@@ -35,7 +33,6 @@ Generate a concise, professional cover letter."""
         user_profile: dict[str, Any],
     ) -> list[dict[str, str]]:
         """Generate answers for job screening questions."""
-        # Default implementation - can be overridden by specific providers
         if not questions:
             return []
 

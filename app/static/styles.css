@@ -1,4 +1,10 @@
 /* Global Styles */
+
+/* Generic hidden class */
+.hidden {
+    display: none !important;
+}
+
 :root {
     --primary-color: #4a6bff;
     --secondary-color: #34c759;
@@ -142,6 +148,12 @@ select {
     font-size: 0.875rem;
 }
 
+.btn:disabled {
+    opacity: 0.6;
+    cursor: not-allowed;
+    transform: none;
+}
+
 /* Tabs */
 .tabs {
     display: flex;
@@ -237,16 +249,39 @@ select {
     display: none;
 }
 
-/* Analytics */
-.analytics-data {
-    margin-top: 1rem;
+/* Notifications */
+.notification {
+    font-weight: 500;
+    cursor: pointer;
+    font-family: 'Roboto', sans-serif;
+    line-height: 1.4;
 }
 
-.analytics-card {
-    padding: 1rem;
-    border: 1px solid var(--border-color);
-    border-radius: 4px;
-    margin-bottom: 1rem;
+.notification:hover {
+    opacity: 0.9;
+}
+
+/* Notification animations */
+@keyframes slideIn {
+    from {
+        transform: translateX(400px);
+        opacity: 0;
+    }
+    to {
+        transform: translateX(0);
+        opacity: 1;
+    }
+}
+
+@keyframes slideOut {
+    from {
+        transform: translateX(0);
+        opacity: 1;
+    }
+    to {
+        transform: translateX(400px);
+        opacity: 0;
+    }
 }
 
 /* Footer */
@@ -264,17 +299,23 @@ footer {
         flex-direction: column;
         gap: 0;
     }
-    
+
     .form-row .form-group {
         margin-bottom: 1.5rem;
     }
-    
+
     .tabs {
         flex-direction: column;
     }
-    
+
     .tab-btn {
         width: 100%;
         text-align: left;
+    }
+    
+    .notification {
+        right: 10px;
+        left: 10px;
+        max-width: none;
     }
 }

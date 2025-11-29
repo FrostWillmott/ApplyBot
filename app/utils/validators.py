@@ -1,7 +1,4 @@
-"""Business validation logic for applications.
-
-Separated from service layer for clarity and reusability.
-"""
+"""Validation logic for applications."""
 
 from dataclasses import dataclass
 
@@ -21,32 +18,24 @@ class ValidationResult:
 
 
 async def validate_application_request(request: ApplyRequest) -> ValidationResult:
-    """Validate application request for business rules.
-
-    This goes beyond Pydantic validation to check business logic.
-    """
+    """Validate application request."""
     warnings = []
 
-    # Check resume content quality if provided
     if request.resume and len(request.resume.strip()) < 100:
         warnings.append("Resume content is very short")
 
-    # Check skills relevance if provided
     if request.skills and len(request.skills.strip()) < 20:
         warnings.append("Skills description is very brief")
 
-    # Check experience description if provided
     if request.experience and len(request.experience.strip()) < 50:
         warnings.append("Experience description is quite short")
 
-    # Business rule: Resume ID format validation
     if not request.resume_id or not request.resume_id.strip():
         return ValidationResult(
             is_valid=False,
             error="Resume ID is required for application submission"
         )
 
-    # Check for obvious spam/template content in provided fields
     template_indicators = ["lorem ipsum", "sample text", "template"]
     content_to_check = f"{request.resume or ''} {request.skills or ''} {request.experience or ''}".lower()
 

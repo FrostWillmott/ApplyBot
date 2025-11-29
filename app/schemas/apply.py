@@ -43,6 +43,10 @@ class BulkApplyRequest(ApplyRequest):
     preferred_schedule: list[str] | None = Field(
         default=None, description="Preferred work schedules (e.g., 'flexible', 'remote', 'shift')"
     )
+    use_cover_letter: bool = Field(
+        default=True, 
+        description="Enable AI assistant: generates cover letter and answers screening questions in vacancy language (RU/EN auto-detect)"
+    )
 
 
 class ApplyResponse(BaseModel):

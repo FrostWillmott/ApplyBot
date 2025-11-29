@@ -11,13 +11,13 @@ logger = logging.getLogger(__name__)
 
 
 class ClaudeProvider(LLMProvider):
-    """Enhanced Claude provider with job application capabilities"""
+    """Claude LLM provider."""
 
     def __init__(self, api_key: str):
         self.client = Anthropic(api_key=api_key)
 
     async def generate(self, prompt: str) -> str:
-        """Generate text from a prompt (original method)"""
+        """Generate text from a prompt."""
         try:
             response = await asyncio.to_thread(
                 self.client.messages.create,
@@ -35,15 +35,11 @@ class ClaudeProvider(LLMProvider):
     async def generate_cover_letter(
         self, vacancy: dict[str, Any], user_profile: dict[str, Any]
     ) -> str:
-        """Generate a personalized cover letter for a job vacancy"""
+        """Generate a cover letter for a job vacancy."""
         company = vacancy.get("employer", {}).get("name", "the company")
         position = vacancy.get("name", "this position")
-
-        # Extract job information
         requirements = vacancy.get("snippet", {}).get("requirement", "")
         responsibilities = vacancy.get("snippet", {}).get("responsibility", "")
-
-        # Clean HTML from description if present
         description = vacancy.get("description", "")
         if description and "<" in description:
             description = re.sub(r"<[^>]+>", "", description)
@@ -52,7 +48,6 @@ class ClaudeProvider(LLMProvider):
             skill.get("name", "") for skill in vacancy.get("key_skills", [])
         ]
 
-        # Determine language based on job posting
         is_russian = any(
             char in (requirements + responsibilities + description)
             for char in "абвгдеёжзийклмнопрстуфхцчшщъыьэюя"
@@ -139,7 +134,7 @@ Generate ONLY the cover letter text."""
         vacancy: dict[str, Any],
         user_profile: dict[str, Any],
     ) -> list[dict[str, str]]:
-        """Generate answers for job screening questions"""
+        """Generate answers for job screening questions."""
         if not questions:
             return []
 
@@ -148,7 +143,6 @@ Generate ONLY the cover letter text."""
             question_text = q.get("text", q.get("question", str(q)))
             questions_text += f"{i}. {question_text}\n"
 
-        # Determine language
         sample_text = questions_text + vacancy.get("name", "")
         is_russian = any(
             char in sample_text for char in "абвгдеёжзийклмнопрстуфхцчшщъыьэюя"
@@ -205,8 +199,7 @@ Provide only the numbered answers."""
     def _parse_screening_answers(
         self, response: str, questions: list[dict[str, Any]]
     ) -> list[dict[str, str]]:
-        """Parse LLM response into structured answers"""
-        # Handle both Russian and English formats
+        """Parse LLM response into structured answers."""
         answer_patterns = [
             r"(?:Answer|Ответ) (\d+):\s*(.+?)(?=(?:Answer|Ответ) \d+:|$)",
             r"(\d+)\.\s*(.+?)(?=\d+\.|$)",
@@ -224,16 +217,13 @@ Provide only the numbered answers."""
             question_id = question.get("id", str(i))
             answer_text = ""
 
-            # Find corresponding answer
             for match in matches:
                 answer_num = int(match[0]) - 1
                 if answer_num == i:
                     answer_text = match[1].strip()
                     break
 
-            # Fallback answer
             if not answer_text:
-                # Determine language for fallback
                 sample_text = str(question)
                 is_russian = any(
                     char in sample_text

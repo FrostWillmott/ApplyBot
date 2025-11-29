@@ -23,11 +23,13 @@ DEFAULT_HEADERS = {
     'Sec-Fetch-Mode': 'cors',
     'Sec-Fetch-Site': 'cross-site',
     'Upgrade-Insecure-Requests': '1',
+    'Referer': 'https://hh.ru/',
+    'Origin': 'https://hh.ru',
 }
 
 
 class HHAPIError(Exception):
-    """Custom exception for HH API errors"""
+    """HH API error."""
     def __init__(self, status_code: int, message: str, response_data: dict = None):
         self.status_code = status_code
         self.message = message
@@ -36,14 +38,13 @@ class HHAPIError(Exception):
 
 
 class HHClient:
-    """Enhanced HeadHunter API client with improved error handling and caching."""
+    """HeadHunter API client."""
 
     TOKEN_URL = "https://hh.ru/oauth/token"
     API_BASE = "https://api.hh.ru"
 
-    # Rate limiting
-    MAX_REQUESTS_PER_MINUTE = 1000  # HH API limit
-    REQUEST_DELAY = 0.1  # Minimum delay between requests
+    MAX_REQUESTS_PER_MINUTE = 1000
+    REQUEST_DELAY = 0.1
 
     def __init__(self):
         self.client = httpx.AsyncClient(
@@ -62,7 +63,7 @@ class HHClient:
         await self.close()
 
     async def _rate_limit(self):
-        """Implement basic rate limiting"""
+        """Basic rate limiting."""
         if self._last_request_time:
             elapsed = asyncio.get_event_loop().time() - self._last_request_time
             if elapsed < self.REQUEST_DELAY:
@@ -70,13 +71,11 @@ class HHClient:
         self._last_request_time = asyncio.get_event_loop().time()
 
     async def _ensure_token(self):
-        """Ensure we have a valid access token with improved caching."""
-        # Check if we have a cached valid token
+        """Ensure we have a valid access token."""
         if (self._token and self._token_expires_at and
                 datetime.utcnow() < self._token_expires_at):
             return
 
-        # Get token from database
         token = await TokenStorage.get_latest()
         if not token or token.is_expired():
             raise HTTPException(
@@ -85,11 +84,9 @@ class HHClient:
             )
 
         self._token = token.access_token
-        # Cache token expiration (with 5 minute buffer)
         self._token_expires_at = (
                 token.obtained_at + timedelta(seconds=token.expires_in - 300)
         )
-
         self.client.headers.update({"Authorization": f"Bearer {self._token}"})
         logger.info("HH token refreshed successfully")
 
@@ -100,8 +97,8 @@ class HHClient:
         max_retries: int = 3,
         base_delay: float = 1.0,
         **kwargs,
-    ) -> dict:  # Changed return type to dict
-        """Make HTTP request with error handling, rate limiting, and exponential backoff."""
+    ) -> dict:
+        """Make HTTP request with retry logic."""
         kwargs.setdefault("headers", {}).update(DEFAULT_HEADERS)
 
         await asyncio.sleep(random.uniform(0.5, 2.0))
@@ -116,19 +113,22 @@ class HHClient:
                     method, endpoint, **kwargs
                 )
 
-                # Check for DDoS protection page
+                response_text = response.text.lower() if hasattr(response, 'text') else ""
                 if (
-                    "ddos-guard" in response.text.lower()
-                    or "checking your browser" in response.text.lower()
+                    "ddos-guard" in response_text
+                    or "checking your browser" in response_text
+                    or response.status_code == 403
                 ):
                     retries += 1
                     if retries > max_retries:
                         logger.error(
-                            "Request blocked by DDoS protection after all retries"
+                            f"Request blocked by DDoS protection after {max_retries} retries. "
+                            f"Endpoint: {endpoint}, Status: {response.status_code}"
                         )
                         raise HHAPIError(
                             429,
                             "Request blocked by DDoS protection. Please try again later.",
+                            {"status_code": response.status_code, "headers": dict(response.headers)}
                         )
 
                     # Wait longer for DDoS protection
@@ -139,7 +139,6 @@ class HHClient:
                     await asyncio.sleep(delay)
                     continue
 
-                # Handle rate limiting (429)
                 if response.status_code == 429:
                     retry_after = int(response.headers.get("Retry-After", 60))
                     logger.warning(
@@ -148,7 +147,6 @@ class HHClient:
                     await asyncio.sleep(retry_after)
                     continue
 
-                # Handle 502/503 Bad Gateway errors (common with DDoS protection)
                 if response.status_code in [502, 503, 504]:
                     retries += 1
                     if retries > max_retries:
@@ -158,6 +156,7 @@ class HHClient:
                         raise HHAPIError(
                             response.status_code,
                             f"Gateway error after {max_retries} retries",
+                            {"status_code": response.status_code}
                         )
 
                     delay = base_delay * (2**retries) + random.uniform(1, 3)
@@ -167,12 +166,24 @@ class HHClient:
                     await asyncio.sleep(delay)
                     continue
 
-                # Success case
                 response.raise_for_status()
-                return response.json()  # Return the JSON directly
+
+                if not response.text or response.text.strip() == "":
+                    return {"status": "success", "status_code": response.status_code}
+
+                try:
+                    return response.json()
+                except Exception as e:
+                    if response.status_code in [200, 201, 204]:
+                        return {"status": "success", "status_code": response.status_code}
+                    logger.error(f"Failed to parse JSON response: {e}, Response text: {response.text[:500]}")
+                    raise HHAPIError(
+                        500,
+                        f"Invalid JSON response: {str(e)}",
+                        {"response_text": response.text[:500]}
+                    )
 
             except httpx.HTTPStatusError as e:
-                # Don't retry for client errors (4xx) except specific ones
                 if (
                     e.response.status_code < 500
                     and e.response.status_code not in [429, 408, 502, 503, 504]
@@ -181,23 +192,23 @@ class HHClient:
                     try:
                         error_data = e.response.json()
                     except:
-                        error_data = {"message": e.response.text}
+                        error_data = {"message": e.response.text[:500]}
 
                     logger.error(
-                        f"HH API client error: {e.response.status_code} - {error_data}"
+                        f"HH API client error: {e.response.status_code} - {error_data}, "
+                        f"Endpoint: {endpoint}, Method: {method}"
                     )
                     raise HHAPIError(
                         e.response.status_code, str(error_data), error_data
                     )
 
-                # For server errors, use exponential backoff
                 retries += 1
                 if retries > max_retries:
                     error_data = {}
                     try:
                         error_data = e.response.json()
                     except:
-                        error_data = {"message": e.response.text}
+                        error_data = {"message": e.response.text[:500]}
 
                     logger.error(
                         f"HH API error after {max_retries} retries: {e.response.status_code} - {error_data}"
@@ -231,26 +242,26 @@ class HHClient:
                 )
                 await asyncio.sleep(delay)
 
-    # Vacancy Management
     async def search_vacancies(
         self,
         text: str = None,
         area: int = None,
         experience: str = None,
         employment: str = None,
+        schedule: str = None,
         salary: int = None,
+        only_with_salary: bool = False,
         currency: str = "RUR",
         page: int = 0,
         per_page: int = 20,
         **kwargs,
     ) -> dict:
-        """Enhanced vacancy search with better parameter handling."""
+        """Search vacancies with API-level filtering."""
         params = {
             "page": page,
-            "per_page": min(per_page, 100),  # HH API limit
+            "per_page": min(per_page, 100),
         }
 
-        # Add optional parameters
         if text:
             params["text"] = text
         if area:
@@ -259,36 +270,34 @@ class HHClient:
             params["experience"] = experience
         if employment:
             params["employment"] = employment
+        if schedule:
+            params["schedule"] = schedule
         if salary:
             params["salary"] = salary
             params["currency"] = currency
+        if only_with_salary:
+            params["only_with_salary"] = "true"
 
-        # Add any additional parameters
         params.update(kwargs)
 
         try:
-            response = await self._make_request(
-                "GET", "/vacancies", params=params
-            )
-            return response  # _make_request already returns JSON
+            response = await self._make_request("GET", "/vacancies", params=params)
+            return response
         except HHAPIError as e:
             raise HTTPException(
                 status_code=e.status_code,
                 detail=f"Vacancy search failed: {e.message}",
             )
 
-    # Maintain backward compatibility
     async def list_vacancies(self, **params) -> dict:
         """Backward compatibility method."""
         return await self.search_vacancies(**params)
 
     async def get_vacancy_details(self, vacancy_id: str) -> dict[str, Any]:
-        """Get full vacancy details with caching potential."""
+        """Get full vacancy details."""
         try:
-            response = await self._make_request(
-                "GET", f"/vacancies/{vacancy_id}"
-            )
-            return response  # _make_request already returns JSON
+            response = await self._make_request("GET", f"/vacancies/{vacancy_id}")
+            return response
         except HHAPIError as e:
             if e.status_code == 404:
                 raise HTTPException(
@@ -300,12 +309,10 @@ class HHClient:
             )
 
     async def get_vacancy_questions(self, vacancy_id: str) -> list[dict]:
-        """Get screening questions with improved structure."""
+        """Get screening questions for a vacancy."""
         try:
-            response = await self._make_request(
-                "GET", f"/vacancies/{vacancy_id}/questions"
-            )
-            return response.get("items", [])  # response is already JSON
+            response = await self._make_request("GET", f"/vacancies/{vacancy_id}/questions")
+            return response.get("items", [])
         except HHAPIError as e:
             if e.status_code == 404:
                 return []  # No questions for this vacancy
@@ -315,10 +322,10 @@ class HHClient:
             return []
 
     async def get_my_resumes(self) -> list[dict]:
-        """Get user's resumes with better error handling."""
+        """Get user's resumes."""
         try:
             response = await self._make_request("GET", "/resumes/mine")
-            return response.get("items", [])  # response is already JSON
+            return response.get("items", [])
         except HHAPIError as e:
             raise HTTPException(
                 status_code=e.status_code,
@@ -329,44 +336,56 @@ class HHClient:
         """Get detailed resume information."""
         try:
             response = await self._make_request("GET", f"/resumes/{resume_id}")
-            return response  # _make_request already returns JSON
+            return response
         except HHAPIError as e:
             if e.status_code == 404:
                 raise HTTPException(404, f"Resume {resume_id} not found")
             raise HTTPException(e.status_code, f"Failed to fetch resume: {e.message}")
 
-    # Application Management
     async def apply(
             self,
             vacancy_id: str,
             resume_id: str,
-            cover_letter: str,
+            cover_letter: str | None = None,
             answers: list[dict] | None = None
     ) -> dict:
-        """Submit application with enhanced validation."""
-        if not cover_letter.strip():
-            raise ValueError("Cover letter cannot be empty")
-
-        application_data = {
-            "cover_letter": cover_letter.strip()
-        }
-
-        if answers:
-            # Validate answers format
-            for answer in answers:
-                if "id" not in answer or "answer" not in answer:
-                    raise ValueError("Invalid answer format. Expected {id, answer}")
-            application_data["answers"] = answers
+        """Submit application."""
+        if cover_letter and cover_letter.strip():
+            if len(cover_letter.strip()) < 50:
+                raise ValueError("Cover letter must be at least 50 characters long")
 
         try:
+            form_data = {
+                "vacancy_id": vacancy_id,
+                "resume_id": resume_id,
+            }
+
+            if cover_letter and cover_letter.strip():
+                form_data["message"] = cover_letter.strip()
+
+            if answers:
+                for answer in answers:
+                    question_id = answer.get("id")
+                    answer_text = answer.get("answer", "")
+                    if question_id and answer_text:
+                        form_data[f"answer_{question_id}"] = answer_text.strip()
+                logger.info(f"Adding {len(answers)} screening question answers to application")
+
+            apply_headers = DEFAULT_HEADERS.copy()
+            apply_headers.update({
+                'Content-Type': 'application/x-www-form-urlencoded',
+                'Referer': f'https://hh.ru/vacancy/{vacancy_id}',
+                'Origin': 'https://hh.ru',
+            })
+
             response = await self._make_request(
                 "POST",
-                f"/resumes/{resume_id}/apply",
-                params={"vacancyId": vacancy_id},
-                json=application_data
+                "/negotiations",
+                data=form_data,
+                headers=apply_headers
             )
             logger.info(f"Successfully applied to vacancy {vacancy_id}")
-            return response.json()
+            return response or {"status": "success"}
 
         except HHAPIError as e:
             error_messages = {
@@ -379,6 +398,11 @@ class HHClient:
             error_detail = error_messages.get(
                 e.status_code,
                 f"Application failed with HTTP {e.status_code}"
+            )
+
+            logger.error(
+                f"Application failed for vacancy {vacancy_id}: "
+                f"Status {e.status_code}, Response: {e.response_data}"
             )
 
             raise HTTPException(
@@ -394,14 +418,54 @@ class HHClient:
                 "/negotiations",
                 params={"page": page, "per_page": per_page}
             )
-            return response.json()
+            return response
         except HHAPIError as e:
             raise HTTPException(e.status_code, f"Failed to fetch applications: {e.message}")
 
-    # OAuth Management
+    async def get_applied_vacancy_ids(self) -> set[str]:
+        """Get set of all vacancy IDs user has already applied to."""
+        applied_ids = set()
+        page = 0
+        per_page = 100
+
+        try:
+            while True:
+                response = await self._make_request(
+                    "GET",
+                    "/negotiations",
+                    params={"page": page, "per_page": per_page}
+                )
+
+                items = response.get("items", [])
+                if not items:
+                    break
+
+                for item in items:
+                    vacancy = item.get("vacancy", {})
+                    vacancy_id = vacancy.get("id")
+                    if vacancy_id:
+                        applied_ids.add(str(vacancy_id))
+
+                pages = response.get("pages", 1)
+                if page >= pages - 1:
+                    break
+
+                page += 1
+                await asyncio.sleep(0.5)
+
+                if page >= 20:
+                    logger.warning("Reached page limit when fetching applied vacancies")
+                    break
+
+            logger.info(f"Found {len(applied_ids)} previously applied vacancies from HH.ru")
+            return applied_ids
+
+        except HHAPIError as e:
+            logger.error(f"Failed to fetch applied vacancies: {e}")
+            return set()
 
     async def get_access_token(self, code: str) -> dict:
-        """Exchange authorization code for access token with retry logic."""
+        """Exchange authorization code for access token."""
         data = {
             "grant_type": "authorization_code",
             "client_id": settings.hh_client_id,
@@ -426,13 +490,8 @@ class HHClient:
             for attempt in range(max_retries + 1):
                 try:
                     if attempt > 0:
-                        # Exponential backoff with jitter
-                        delay = base_delay * (
-                            2 ** (attempt - 1)
-                        ) + random.uniform(0, 1)
-                        logger.info(
-                            f"Token exchange retry {attempt}/{max_retries} after {delay:.2f}s"
-                        )
+                        delay = base_delay * (2 ** (attempt - 1)) + random.uniform(0, 1)
+                        logger.info(f"Token exchange retry {attempt}/{max_retries} after {delay:.2f}s")
                         await asyncio.sleep(delay)
 
                     response = await client.post(
@@ -494,12 +553,11 @@ class HHClient:
                     detail="Token refresh failed. Please re-authenticate."
                 )
 
-    # Utility Methods
     async def get_areas(self) -> list[dict]:
         """Get available areas (cities/regions)."""
         try:
             response = await self._make_request("GET", "/areas")
-            return response.json()
+            return response
         except HHAPIError as e:
             raise HTTPException(e.status_code, f"Failed to fetch areas: {e.message}")
 
@@ -507,7 +565,7 @@ class HHClient:
         """Get available job specializations."""
         try:
             response = await self._make_request("GET", "/specializations")
-            return response.json()
+            return response
         except HHAPIError as e:
             raise HTTPException(e.status_code, f"Failed to fetch specializations: {e.message}")
 
@@ -515,8 +573,146 @@ class HHClient:
         """Close the HTTP client."""
         await self.client.aclose()
 
+    async def get_user_info(self, access_token: str) -> dict:
+        """Get current user information."""
+        headers = {"Authorization": f"Bearer {access_token}", "User-Agent": "ApplyBot/1.0"}
+        async with httpx.AsyncClient() as client:
+            response = await client.get("https://api.hh.ru/me", headers=headers)
+            response.raise_for_status()
+            return response.json()
 
-# FastAPI Dependencies
+    async def get_user_resumes(self, access_token: str) -> list[dict]:
+        """Get user's resumes list."""
+        headers = {"Authorization": f"Bearer {access_token}", "User-Agent": "ApplyBot/1.0"}
+        async with httpx.AsyncClient() as client:
+            response = await client.get("https://api.hh.ru/resumes/mine", headers=headers)
+            response.raise_for_status()
+            return response.json().get("items", [])
+
+    async def get_resume_details_by_token(self, access_token: str, resume_id: str) -> dict:
+        """Get detailed resume information by token."""
+        headers = {"Authorization": f"Bearer {access_token}", "User-Agent": "ApplyBot/1.0"}
+        async with httpx.AsyncClient() as client:
+            response = await client.get(f"https://api.hh.ru/resumes/{resume_id}", headers=headers)
+            response.raise_for_status()
+            return response.json()
+
+    async def get_user_profile_for_application(
+        self, access_token: str, resume_id: str | None = None
+    ) -> dict:
+        """Get user profile for bulk application."""
+        user_info = await self.get_user_info(access_token)
+        if not user_info:
+            raise ValueError("Failed to get user information")
+
+        resumes = await self.get_user_resumes(access_token)
+        if not resumes:
+            raise ValueError("User has no resumes on HH.ru")
+
+        if resume_id:
+            selected_resume_id = resume_id
+        else:
+            active_resumes = [
+                r for r in resumes if r.get("status", {}).get("id") == "published"
+            ]
+            selected_resume_id = active_resumes[0]["id"] if active_resumes else resumes[0]["id"]
+
+        resume = await self.get_resume_details_by_token(access_token, selected_resume_id)
+        if not resume:
+            raise ValueError("Failed to get resume details")
+
+        def safe_get(data, *keys, default=None):
+            """Safely get nested values from a dictionary."""
+            result = data
+            for key in keys:
+                if result is None:
+                    return default
+                if isinstance(result, dict):
+                    result = result.get(key)
+                else:
+                    return default
+            return result if result is not None else default
+
+        profile = {
+            "user": {
+                "id": user_info.get("id"),
+                "email": user_info.get("email"),
+                "first_name": user_info.get("first_name"),
+                "last_name": user_info.get("last_name"),
+                "middle_name": user_info.get("middle_name"),
+            },
+            "resume": {
+                "id": resume.get("id"),
+                "title": resume.get("title"),
+                "age": resume.get("age"),
+                "gender": safe_get(resume, "gender", "name"),
+                "area": safe_get(resume, "area", "name"),
+                "salary": resume.get("salary"),
+                "photo": safe_get(resume, "photo", "medium"),
+            },
+            "experience": [
+                {
+                    "company": exp.get("company") or "",
+                    "position": exp.get("position") or "",
+                    "start": exp.get("start") or "",
+                    "end": exp.get("end") or "",
+                    "description": exp.get("description") or "",
+                }
+                for exp in resume.get("experience", []) if exp
+            ],
+            "skills": [skill.get("name", "") if isinstance(skill, dict) else str(skill) 
+                      for skill in resume.get("skill_set", []) if skill],
+            "education": {
+                "level": safe_get(resume, "education", "level", "name"),
+                "primary": [
+                    {
+                        "name": edu.get("name") or "",
+                        "organization": edu.get("organization") or "",
+                        "result": edu.get("result") or "",
+                        "year": edu.get("year"),
+                    }
+                    for edu in resume.get("education", {}).get("primary", []) if edu
+                ],
+            },
+            "languages": [
+                {
+                    "name": lang.get("name") or "",
+                    "level": safe_get(lang, "level", "name") or "",
+                }
+                for lang in resume.get("language", []) if lang
+            ],
+            "contacts": {
+                "phone": next(
+                    (
+                        c.get("value")
+                        for c in resume.get("contact", [])
+                        if c and c.get("type", {}).get("id") == "cell"
+                    ),
+                    None,
+                ),
+                "email": next(
+                    (
+                        c.get("value")
+                        for c in resume.get("contact", [])
+                        if c and c.get("type", {}).get("id") == "email"
+                    ),
+                    None,
+                ),
+            },
+            "citizenship": [
+                c.get("name") for c in resume.get("citizenship", []) if c
+            ],
+            "work_ticket": [
+                w.get("name") for w in resume.get("work_ticket", []) if w
+            ],
+            "travel_time": safe_get(resume, "travel_time", "name"),
+            "business_trip_readiness": safe_get(resume, "business_trip_readiness", "name"),
+            "relocation": safe_get(resume, "relocation", "type", "name"),
+        }
+
+        return profile
+
+
 async def get_hh_client():
     """FastAPI dependency for HH client with proper cleanup."""
     client = HHClient()

@@ -12,12 +12,11 @@ class Settings(BaseSettings):
     anthropic_api_key: str
     database_url: AnyUrl
 
-    # Replace class Config with model_config using ConfigDict
     model_config = ConfigDict(
         env_file=".env",
         env_file_encoding="utf-8",
         case_sensitive=False,
-        extra="allow",  # This allows additional environment variables
+        extra="allow",
     )
 
 

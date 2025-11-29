@@ -1,9 +1,4 @@
-"""
-ApplyBot - Automated job application system for hh.ru
-
-This is the main entry point for the FastAPI application.
-It sets up the app, middleware, routers, and startup/shutdown events.
-"""
+"""ApplyBot - Automated job application system for hh.ru."""
 
 import logging
 import os
@@ -14,36 +9,34 @@ from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse
 
 from app.core.storage import TokenStorage
-from app.routers import apply_router, auth_router
+from app.routers import apply_router, auth_router, hh_apply
 
-# Configure logging
+log_level = os.getenv("LOG_LEVEL", "INFO").upper()
 logging.basicConfig(
-    level=logging.INFO,
+    level=getattr(logging, log_level, logging.INFO),
     format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
 )
+
 logger = logging.getLogger(__name__)
 
-# Create FastAPI app
 app = FastAPI(
     title="ApplyBot",
     description="Automated job application system for hh.ru",
     version="1.0.0",
 )
 
-# Add CORS middleware for development
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],  # Configure appropriately for production
+    allow_origins=["*"],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
 
-# Include routers
 app.include_router(auth_router)
 app.include_router(apply_router)
+app.include_router(hh_apply.router)
 
-# Mount static files
 app.mount("/static", StaticFiles(directory="app/static"), name="static")
 
 
@@ -70,13 +63,10 @@ async def health_check():
     return {"status": "healthy", "service": "applybot"}
 
 
-# Startup and shutdown events
 @app.on_event("startup")
 async def startup_event():
-    """Initialize database and other services on startup."""
+    """Initialize application."""
     logger.info("Initializing application...")
-
-    # Initialize database models
     await TokenStorage.init_models()
 
     logger.info("Application initialized successfully")
@@ -85,6 +75,4 @@ async def startup_event():
 @app.on_event("shutdown")
 async def shutdown_event():
     """Cleanup on shutdown."""
-    logger.info("Shutting down application...")
-    # Close any open connections or resources
     logger.info("Application shutdown complete")

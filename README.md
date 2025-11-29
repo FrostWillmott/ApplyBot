@@ -1,161 +1,151 @@
 # ApplyBot 🤖
 
-Автоматизированная система для подачи заявок на вакансии с hh.ru с использованием ИИ для генерации персонализированных сопроводительных писем.
+Automated job application system for hh.ru with AI-powered cover letter generation.
 
-## 🚧 Статус проекта
+## 🚧 Project Status
 
-**⏸️ Временно приостановлен** (последнее обновление: июнь 2025)
+**🟢 Working** (Last update: November 2025)
 
-Проект для автоматизации поиска работы на hh.ru. Базовая архитектура реализована, авторизация и поиск вакансий работают, но отправка откликов и генерация писем содержат баги. Работа приостановлена, планирую вернуться к доработке позже.
+### ✅ Features
+- OAuth authentication with hh.ru
+- Resume selection from HH.ru profile
+- Vacancy search with API-level filtering (experience, salary, remote)
+- **AI Assistant** (Anthropic Claude):
+  - Cover letter generation
+  - Screening questions answering
+  - Auto language detection (RU/EN based on vacancy)
+- Skip already applied vacancies (fetched from HH.ru API)
+- Bulk applications with progress tracking
+- Daily application counter (200 limit with hard block)
+- Completion notifications (sound + browser)
+- Rate limiting protection (429 handling)
+- FastAPI + SQLAlchemy async architecture
+- Docker development/production environments
 
-### ✅ Работает
-- ✅ OAuth авторизация с hh.ru
-- ✅ Поиск и фильтрация вакансий
-- ✅ Интеграция с Anthropic Claude 4.0
-- ✅ Базовая архитектура FastAPI + SQLAlchemy
-- ✅ Docker окружение для разработки
+### 🔄 Duplicate Prevention
 
-### 🐛 В разработке (есть баги)
-- 🔧 Генерация сопроводительных писем
-- 🔧 Автоматическая отправка откликов
-- 🔧 Ответы на скрининговые вопросы
-- 🔧 Массовые отклики
-- 🔧 История откликов в БД
-- 🔧 Фоновые задачи через RQ
+Before sending applications, the system:
+1. Fetches all your existing applications from HH.ru API (`GET /negotiations`)
+2. Filters out vacancies you've already applied to
+3. Only sends to new vacancies
 
-### 📋 Возможные улучшения (если вернусь к проекту)
-- Исправление существующих багов
-- Telegram бот для управления
-- Веб-интерфейс для настройки
-- Аналитика и статистика откликов
+This prevents wasting daily quota on duplicates.
 
-## 🛠️ Технологический стек
+### 📋 Planned
+- Application history dashboard
+- Response tracking from employers
+
+## 🛠️ Tech Stack
 
 ### Backend
-- **FastAPI** 0.115+ - асинхронный веб-фреймворк
-- **SQLAlchemy 2.0** - ORM с async поддержкой
-- **PostgreSQL** - основная база данных
-- **asyncpg** - асинхронный драйвер PostgreSQL
-- **Alembic** - миграции БД
-- **Redis** + **RQ** - очереди задач (в разработке)
+- **FastAPI** 0.115+ - async web framework
+- **SQLAlchemy 2.0** - ORM with async support
+- **PostgreSQL** - main database
+- **asyncpg** - async PostgreSQL driver
+- **Alembic** - database migrations
+- **Redis** + **RQ** - task queue
 
 ### AI/ML
-- **Anthropic Claude 4.0 (Opus)** - генерация текстов
+- **Anthropic Claude** - text generation
 
-### Development Tools
-- **Poetry** - управление зависимостями
-- **Docker** + **Docker Compose** - контейнеризация
-- **Ruff** - линтинг и форматирование
-- **MyPy** - статическая типизация
-- **Pytest** - тестовый фреймворк
+### Development
+- **Poetry** - dependency management
+- **Docker** + **Docker Compose** - containerization
+- **Ruff** - linting and formatting
+- **MyPy** - static type checking
 
-## 🚀 Быстрый старт
+## 🚀 Quick Start
 
-### Требования
+### Prerequisites
 - Python 3.11
-- Docker и Docker Compose
-- Аккаунт на hh.ru с созданным приложением
-- API ключ Anthropic
+- Docker and Docker Compose
+- hh.ru developer account
+- Anthropic API key
 
-### Получение учетных данных
+### Setup
 
-#### 1. HeadHunter OAuth
-1. Зарегистрируйте приложение на https://dev.hh.ru/
-2. Получите `client_id` и `client_secret`
-3. Укажите redirect URI: `http://localhost:8000/auth/callback`
-
-#### 2. Anthropic API
-1. Зарегистрируйтесь на https://console.anthropic.com/
-2. Создайте API ключ в настройках аккаунта
-
-### Установка
-
-1. **Клонируйте репозиторий**
+1. **Clone the repository**
 ```bash
 git clone https://github.com/FrostWillmott/ApplyBot.git
 cd ApplyBot
 ```
 
-2. **Создайте файл `.env`**
-```env
-# HeadHunter OAuth
-HH_CLIENT_ID=your_hh_client_id
-HH_CLIENT_SECRET=your_hh_client_secret
-HH_REDIRECT_URI=http://localhost:8000/auth/callback
-
-# Anthropic API
-ANTHROPIC_API_KEY=your_anthropic_key
-LLM_PROVIDER=sonnet4
-
-# Database
-DATABASE_URL=postgresql+asyncpg://postgres:postgres@db:5432/applybot
-
-# Redis
-REDIS_URL=redis://redis:6379/0
+2. **Create `.env` file from example**
+```bash
+cp .env.example .env
 ```
 
-3. **Запустите с Docker Compose**
-```bash
-# Development режим
-docker-compose --profile dev up -d
+Then edit `.env` and fill in your credentials:
 
-# Просмотр логов
-docker-compose logs -f app_dev
+| Variable | Description | Where to get |
+|----------|-------------|--------------|
+| `HH_CLIENT_ID` | HeadHunter OAuth Client ID | [dev.hh.ru/admin](https://dev.hh.ru/admin) |
+| `HH_CLIENT_SECRET` | HeadHunter OAuth Secret | [dev.hh.ru/admin](https://dev.hh.ru/admin) |
+| `ANTHROPIC_API_KEY` | Anthropic API Key | [console.anthropic.com](https://console.anthropic.com/) |
+
+Other variables have sensible defaults for Docker setup.
+
+3. **Start development environment**
+```bash
+docker compose -f docker-compose.dev.yml up -d
+
+# View logs
+docker compose -f docker-compose.dev.yml logs -f app
 ```
 
-Приложение будет доступно на `http://localhost:8000`
+Application available at `http://localhost:8000`
 
-### Локальная разработка (без Docker)
+### Production
 
 ```bash
-# Установка зависимостей
+docker compose -f docker-compose.prod.yml up -d
+```
+
+### Docker Compose: Dev vs Prod
+
+| Feature | `docker-compose.dev.yml` | `docker-compose.prod.yml` |
+|---------|--------------------------|---------------------------|
+| **Hot reload** | ✅ `--reload` + volume mounts | ❌ No |
+| **Log level** | `DEBUG` | `INFO` |
+| **Worker service** | ❌ No | ✅ RQ worker with scheduler |
+| **Restart policy** | None | `unless-stopped` |
+| **Ports** | `8000`, `8001`, `5434`, `6380` | `80` only |
+| **DB auth** | Trust (no password) | Password required |
+| **Redis persistence** | ❌ No | ✅ Volume mount |
+| **Static files** | Volume mount (live edit) | Baked into image |
+
+Both use the same `.env` file for credentials.
+
+### Local Development (without Docker)
+
+```bash
+# Install dependencies
 poetry install
 
-# Активация виртуального окружения
+# Activate virtual environment
 poetry shell
 
-# Запуск PostgreSQL и Redis (требуется Docker)
-docker-compose up db redis -d
+# Start PostgreSQL and Redis
+docker compose -f docker-compose.dev.yml up db redis -d
 
-# Запуск миграций
+# Run migrations
 alembic upgrade head
 
-# Запуск сервера разработки
+# Start development server
 uvicorn app.main:app --reload --host 0.0.0.0 --port 8000
 ```
 
-## 📚 Использование
+## 📚 Usage
 
-### 1. Авторизация
+### 1. Authentication
 
-Перейдите на `http://localhost:8000/auth/login` для авторизации через OAuth hh.ru.
+Go to `http://localhost:8000` and click "Login with HeadHunter".
 
-### 2. API Endpoints
-
-#### Документация API
+### 2. API Documentation
 - Swagger UI: `http://localhost:8000/docs`
 - ReDoc: `http://localhost:8000/redoc`
 
-#### Поиск вакансий (✅ работает)
-```bash
-GET /apply/search?text=Python%20Developer&page=0&per_page=20
-```
-
-#### Одиночный отклик (🐛 в разработке)
-```bash
-POST /apply/single/{vacancy_id}
-Content-Type: application/json
-
-{
-  "position": "Python Developer",
-  "resume": "Experienced Python developer with 5+ years...",
-  "skills": "Python, FastAPI, PostgreSQL, Docker",
-  "experience": "5+ years in web development",
-  "resume_id": "your_resume_id_from_hh"
-}
-```
-
-#### Массовые отклики (🐛 в разработке)
+### 3. Bulk Applications
 ```bash
 POST /apply/bulk?max_applications=20
 Content-Type: application/json
@@ -169,143 +159,126 @@ Content-Type: application/json
   "exclude_companies": ["CompanyToExclude"],
   "salary_min": 100000,
   "remote_only": true,
-  "required_skills": ["Python", "FastAPI"]
+  "use_cover_letter": true
 }
 ```
 
-### 3. Веб-интерфейс
+## 🤖 AI Assistant
 
-Базовый веб-интерфейс доступен на `http://localhost:8000`
+The AI Assistant (powered by Anthropic Claude) provides:
 
-## 🧪 Тестирование
+### Cover Letter Generation
+- Personalized based on vacancy requirements and candidate profile
+- **Auto-detects language**: Russian vacancies → Russian letters, English → English
+- 300-400 words, professional tone
 
-```bash
-# Запуск всех тестов
-poetry run pytest
+### Screening Questions
+- Automatically answers employer questions
+- Uses candidate profile for relevant responses
+- Same language as vacancy
 
-# С покрытием кода
-poetry run pytest --cov=app --cov-report=html
-
-# Только unit тесты
-poetry run pytest tests/unit/
-
-# Только integration тесты
-poetry run pytest tests/integration/
-
-# Запуск тестов в Docker
-docker-compose --profile dev run --rm tests
+### Language Detection
+```python
+# Checks for Cyrillic characters in vacancy text
+is_russian = any(char in text for char in "абвгдеёжзийклмнопрстуфхцчшщъыьэюя")
 ```
 
-## 📁 Структура проекта
+## ⚙️ Configuration
+
+Frontend configuration is stored in `app/static/config.js`:
+
+### HH.ru API Limits
+
+| Parameter | Value | Description |
+|-----------|-------|-------------|
+| `MAX_PER_REQUEST` | 50 | Maximum applications per single API request |
+| `DAILY_LIMIT` | 200 | Daily limit for applications (approximate) |
+| `WARNING_THRESHOLD` | 150 | Counter turns orange when approaching daily limit |
+| `MIN_COVER_LETTER_LENGTH` | 50 | Minimum cover letter length required by HH.ru |
+
+### Timing Estimates
+
+| Parameter | Value | Description |
+|-----------|-------|-------------|
+| `WITH_COVER_LETTER` | 15 sec | Time per application with AI Assistant enabled |
+| `WITHOUT_COVER_LETTER` | 2 sec | Time per application without AI Assistant |
+| `REQUEST_TIMEOUT` | 600000 ms | Request timeout (10 minutes) |
+
+### Daily Counter
+
+The frontend tracks daily application count in browser localStorage:
+- Automatically resets at midnight
+- Color changes: green (0-149) → orange (150-199) → red (200+)
+- **Hard block at 200**: button disabled, cannot send more applications
+- Auto-limits batch size to remaining quota
+- Data persists per browser/device
+
+> **Note:** HH.ru limits may vary by account type. Premium accounts may have higher limits.
+
+## 📁 Project Structure
 
 ```
 ApplyBot/
 ├── app/
-│   ├── core/              # Конфигурация и базовые утилиты
-│   │   ├── config.py      # Настройки приложения
-│   │   ├── storage.py     # База данных
-│   │   └── exceptions.py  # Кастомные исключения
-│   ├── models/            # SQLAlchemy модели
-│   │   ├── token.py       # Токены OAuth
-│   │   ├── application.py # История откликов
-│   │   └── user.py        # Пользователи
+│   ├── core/              # Configuration and utilities
+│   ├── models/            # SQLAlchemy models
 │   ├── routers/           # FastAPI endpoints
-│   │   ├── auth.py        # Авторизация ✅
-│   │   ├── apply.py       # Отклики 🐛
-│   │   └── hh_apply.py    # Legacy endpoints
-│   ├── schemas/           # Pydantic модели
-│   │   └── apply.py       # Схемы для откликов
-│   ├── services/          # Бизнес-логика
-│   │   ├── application_service.py  # Основной сервис 🐛
-│   │   ├── hh_client.py            # HH API клиент ✅
-│   │   └── llm/                    # LLM провайдеры 🐛
-│   │       ├── base.py
-│   │       ├── providers.py
-│   │       └── factory.py
-│   ├── utils/             # Утилиты
-│   │   ├── filters.py     # Фильтры вакансий
-│   │   └── validators.py  # Валидаторы
-│   ├── static/            # Веб-интерфейс
-│   │   ├── index.html
-│   │   ├── script.js
-│   │   └── styles.css
-│   ├── tasks.py           # RQ фоновые задачи 🐛
-│   └── main.py            # Точка входа
-├── tests/                 # Тесты
-│   ├── unit/
-│   ├── integration/
-│   ├── e2e/
-│   └── conftest.py
-├── alembic/               # Миграции БД
-│   ├── versions/
-│   └── env.py
-├── .github/
-│   └── workflows/         # CI/CD (планируется)
-├── docker-compose.yml     # Docker конфигурация
+│   ├── schemas/           # Pydantic models
+│   ├── services/          # Business logic
+│   │   └── llm/           # LLM providers (Anthropic)
+│   ├── static/            # Web interface
+│   │   ├── config.js      # Frontend configuration
+│   │   ├── script.js      # Main JavaScript
+│   │   ├── styles.css     # Styles
+│   │   └── index.html     # Main page
+│   ├── utils/             # Utilities
+│   └── main.py            # Entry point
+├── alembic/               # Database migrations
+├── docker-compose.dev.yml # Development config
+├── docker-compose.prod.yml# Production config
 ├── Dockerfile             # Multi-stage build
-├── pyproject.toml         # Poetry зависимости
-├── ruff.toml              # Ruff конфигурация
-├── pytest.ini             # Pytest настройки
-└── README.md              # Этот файл
+├── Dockerfile.frontend    # Nginx frontend
+├── nginx.conf             # Nginx configuration
+├── pyproject.toml         # Dependencies
+├── .env.example           # Environment template
+└── README.md
 ```
 
-## 🔧 Разработка
+## 🔧 Development
 
-### Миграции БД
-
+### Database Migrations
 ```bash
-# Создание новой миграции
+# Create new migration
 alembic revision --autogenerate -m "Description"
 
-# Применение миграций
+# Apply migrations
 alembic upgrade head
 
-# Откат миграции
+# Rollback migration
 alembic downgrade -1
 ```
 
-### Линтинг и форматирование
-
+### Code Quality
 ```bash
-# Проверка кода
-poetry run ruff check app tests
+# Lint
+poetry run ruff check app
 
-# Автоисправление
-poetry run ruff check --fix app tests
+# Auto-fix
+poetry run ruff check --fix app
 
-# Форматирование
-poetry run ruff format app tests
+# Format
+poetry run ruff format app
 
-# Проверка типов
+# Type check
 poetry run mypy app
 ```
 
-### Pre-commit hooks
+## 🙏 Acknowledgments
 
-```bash
-# Установка
-poetry run pre-commit install
-
-# Запуск вручную
-poetry run pre-commit run --all-files
-```
-
-## ⚠️ Известные проблемы
-
-Проект содержит нерешенные баги в ключевых функциях:
-- Генерация сопроводительных писем требует отладки
-- Отправка откликов не работает стабильно  
-- Фоновые задачи через RQ не настроены
-- История откликов не всегда сохраняется корректно
-
-Авторизация и поиск вакансий работают стабильно.
-
-## 🙏 Благодарности
-
-- [HeadHunter API](https://dev.hh.ru/) - за предоставление API
-- [Anthropic](https://www.anthropic.com/) - за Claude API
-- [FastAPI](https://fastapi.tiangolo.com/) - за отличный фреймворк
+- [HeadHunter API](https://dev.hh.ru/)
+- [Anthropic](https://www.anthropic.com/)
+- [FastAPI](https://fastapi.tiangolo.com/)
 
 ---
 
-<sub>⚠️ **Дисклеймер:** Проект в стадии разработки, основные функции содержат баги. Работает только поиск вакансий и авторизация. Используйте на свой риск.</sub>
+<sub>⚠️ **Disclaimer:** Project in development. Use at your own risk.</sub>

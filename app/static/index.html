@@ -25,156 +25,100 @@
             </div>
         </section>
 
-        <section id="search-section" class="card">
-            <h2>Search Vacancies</h2>
+        <section id="apply-section" class="card">
+            <h2>Bulk Application</h2>
+            <button id="load-profile-btn" class="btn secondary" style="margin-bottom: 1rem;">📋 Load Profile from HH.ru</button>
+
             <div class="form-group">
-                <label for="search-text">Search Query:</label>
-                <input type="text" id="search-text" placeholder="e.g., Python Developer">
+                <label for="position">Position:</label>
+                <input type="text" id="position" placeholder="e.g., Python Developer">
+            </div>
+            <div class="form-group">
+                <label for="resume">Resume Summary:</label>
+                <textarea id="resume" rows="4" placeholder="Brief summary of your resume"></textarea>
+            </div>
+            <div class="form-group">
+                <label for="skills">Skills:</label>
+                <textarea id="skills" rows="3" placeholder="List your relevant skills"></textarea>
+            </div>
+            <div class="form-group">
+                <label for="experience">Experience:</label>
+                <textarea id="experience" rows="4" placeholder="Summary of your work experience"></textarea>
+            </div>
+            <div class="form-group">
+                <label for="resume-select">Select Resume:</label>
+                <select id="resume-select" disabled>
+                    <option value="">-- Login to load resumes --</option>
+                </select>
+                <input type="hidden" id="resume-id">
+            </div>
+
+            <div class="form-group">
+                <label for="exclude-companies">Exclude Companies (comma-separated):</label>
+                <input type="text" id="exclude-companies" placeholder="e.g., Company1, Company2">
             </div>
             <div class="form-row">
                 <div class="form-group">
-                    <label for="search-page">Page:</label>
-                    <input type="number" id="search-page" value="0" min="0">
+                    <label for="salary-min">Minimum Salary:</label>
+                    <input type="number" id="salary-min" placeholder="e.g., 100000">
                 </div>
-                <div class="form-group">
-                    <label for="search-per-page">Results Per Page:</label>
-                    <input type="number" id="search-per-page" value="20" min="1" max="100">
+                <div class="form-group checkbox-group">
+                    <input type="checkbox" id="remote-only">
+                    <label for="remote-only">Remote Only</label>
                 </div>
             </div>
-            <button id="search-btn" class="btn secondary">Search</button>
+            <div class="form-row">
+                <div class="form-group checkbox-group" style="flex-direction: column; align-items: flex-start;">
+                    <div>
+                        <input type="checkbox" id="use-ai-assistant" checked>
+                        <label for="use-ai-assistant">🤖 AI-ассистент (сопроводительное + ответы на вопросы)</label>
+                    </div>
+                    <small style="color: #666; margin-left: 24px;">Автоматически определяет язык вакансии (RU/EN)</small>
+                </div>
+            </div>
+            <div class="form-group">
+                <label for="experience-level">Experience Level:</label>
+                <select id="experience-level">
+                    <option value="">Any</option>
+                    <option value="noExperience">No Experience</option>
+                    <option value="between1And3">1-3 Years</option>
+                    <option value="between3And6">3-6 Years</option>
+                    <option value="moreThan6">More than 6 Years</option>
+                </select>
+            </div>
+            <div class="form-group">
+                <label for="max-applications">Maximum Applications (1-50, HH.ru limit):</label>
+                <input type="number" id="max-applications" value="10" min="1" max="50">
+                <small style="color: #666;">⚠️ With AI cover letter: ~15 sec per application. Without: ~2 sec.</small>
+            </div>
             
-            <div id="search-results" class="results-container hidden">
-                <h3>Search Results</h3>
-                <div id="results-list" class="results-list"></div>
-                <div class="pagination">
-                    <button id="prev-page" class="btn small">Previous</button>
-                    <span id="page-info">Page 1</span>
-                    <button id="next-page" class="btn small">Next</button>
-                </div>
+            <div id="daily-counter" style="margin-bottom: 1rem; padding: 0.75rem; background: #f5f5f5; border-radius: 4px;">
+                <span>📊 Откликов сегодня: <strong id="daily-count">0</strong> / 200</span>
             </div>
-        </section>
+            <button id="apply-btn" class="btn primary">Apply to Multiple Jobs</button>
 
-        <section id="apply-section" class="card">
-            <h2>Apply to Jobs</h2>
-            <div class="tabs">
-                <button class="tab-btn active" data-tab="single">Single Application</button>
-                <button class="tab-btn" data-tab="bulk">Bulk Application</button>
+            <div id="progress-section" class="status-box hidden" style="margin-top: 1rem;">
+                <p id="progress-text">Processing applications...</p>
+                <div style="background: #e0e0e0; border-radius: 4px; height: 20px; margin-top: 0.5rem;">
+                    <div id="progress-bar" style="background: #4CAF50; height: 100%; border-radius: 4px; width: 0%; transition: width 0.3s;"></div>
+                </div>
+                <p id="progress-eta" style="font-size: 0.9em; color: #666; margin-top: 0.5rem;"></p>
             </div>
-            
-            <div id="single-tab" class="tab-content active">
-                <h3>Apply to a Single Vacancy</h3>
-                <div class="form-group">
-                    <label for="vacancy-id">Vacancy ID:</label>
-                    <input type="text" id="vacancy-id" placeholder="e.g., 12345678">
-                </div>
-                <div class="form-group">
-                    <label for="position">Position:</label>
-                    <input type="text" id="position" placeholder="e.g., Python Developer">
-                </div>
-                <div class="form-group">
-                    <label for="resume">Resume Summary:</label>
-                    <textarea id="resume" rows="4" placeholder="Brief summary of your resume"></textarea>
-                </div>
-                <div class="form-group">
-                    <label for="skills">Skills:</label>
-                    <textarea id="skills" rows="3" placeholder="List your relevant skills"></textarea>
-                </div>
-                <div class="form-group">
-                    <label for="experience">Experience:</label>
-                    <textarea id="experience" rows="4" placeholder="Summary of your work experience"></textarea>
-                </div>
-                <div class="form-group">
-                    <label for="resume-id">Resume ID:</label>
-                    <input type="text" id="resume-id" placeholder="Your HH.ru resume ID">
-                </div>
-                <button id="apply-single-btn" class="btn primary">Apply</button>
-            </div>
-            
-            <div id="bulk-tab" class="tab-content">
-                <h3>Bulk Application</h3>
-                <div class="form-group">
-                    <label for="bulk-position">Position:</label>
-                    <input type="text" id="bulk-position" placeholder="e.g., Python Developer">
-                </div>
-                <div class="form-group">
-                    <label for="bulk-resume">Resume Summary:</label>
-                    <textarea id="bulk-resume" rows="4" placeholder="Brief summary of your resume"></textarea>
-                </div>
-                <div class="form-group">
-                    <label for="bulk-skills">Skills:</label>
-                    <textarea id="bulk-skills" rows="3" placeholder="List your relevant skills"></textarea>
-                </div>
-                <div class="form-group">
-                    <label for="bulk-experience">Experience:</label>
-                    <textarea id="bulk-experience" rows="4" placeholder="Summary of your work experience"></textarea>
-                </div>
-                <div class="form-group">
-                    <label for="bulk-resume-id">Resume ID:</label>
-                    <input type="text" id="bulk-resume-id" placeholder="Your HH.ru resume ID">
-                </div>
-                
-                <div class="form-group">
-                    <label for="exclude-companies">Exclude Companies (comma-separated):</label>
-                    <input type="text" id="exclude-companies" placeholder="e.g., Company1, Company2">
-                </div>
-                <div class="form-row">
-                    <div class="form-group">
-                        <label for="salary-min">Minimum Salary:</label>
-                        <input type="number" id="salary-min" placeholder="e.g., 100000">
-                    </div>
-                    <div class="form-group checkbox-group">
-                        <input type="checkbox" id="remote-only">
-                        <label for="remote-only">Remote Only</label>
-                    </div>
-                </div>
-                <div class="form-group">
-                    <label for="experience-level">Experience Level:</label>
-                    <select id="experience-level">
-                        <option value="">Any</option>
-                        <option value="noExperience">No Experience</option>
-                        <option value="between1And3">1-3 Years</option>
-                        <option value="between3And6">3-6 Years</option>
-                        <option value="moreThan6">More than 6 Years</option>
-                    </select>
-                </div>
-                <div class="form-group">
-                    <label for="max-applications">Maximum Applications:</label>
-                    <input type="number" id="max-applications" value="20" min="1" max="50">
-                </div>
-                <button id="apply-bulk-btn" class="btn primary">Apply to Multiple Jobs</button>
-            </div>
-            
+
             <div id="apply-results" class="results-container hidden">
                 <h3>Application Results</h3>
                 <div id="apply-results-list" class="results-list"></div>
-            </div>
-        </section>
-
-        <section id="analytics-section" class="card">
-            <h2>Application Analytics</h2>
-            <div class="form-group">
-                <label for="user-id">User ID:</label>
-                <input type="text" id="user-id" placeholder="Your user ID">
-            </div>
-            <div class="form-group">
-                <label for="days">Days:</label>
-                <input type="number" id="days" value="30" min="1" max="365">
-            </div>
-            <button id="analytics-btn" class="btn secondary">Get Analytics</button>
-            
-            <div id="analytics-results" class="results-container hidden">
-                <h3>Analytics Results</h3>
-                <div id="analytics-data" class="analytics-data"></div>
             </div>
         </section>
     </main>
 
     <footer>
         <div class="container">
-            <p>&copy; 2023 ApplyBot. All rights reserved.</p>
+            <p>&copy; 2024 ApplyBot. All rights reserved.</p>
         </div>
     </footer>
 
+    <script src="config.js"></script>
     <script src="script.js"></script>
 </body>
 </html>
