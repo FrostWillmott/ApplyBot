@@ -95,7 +95,8 @@ class ApplicationService:
             self,
             request: BulkApplyRequest,
             max_applications: int = 20,
-            user_id: str | None = None
+            user_id: str | None = None,
+            cancel_check: callable = None
     ) -> list[ApplyResponse]:
         """Apply to multiple vacancies based on search criteria."""
         logger.info(f"Starting bulk application for: {request.position}")
@@ -117,6 +118,11 @@ class ApplicationService:
 
             skipped_already_applied = 0
             for vacancy in vacancies:
+                # Check for cancellation
+                if cancel_check and cancel_check():
+                    logger.info("Bulk application cancelled by user")
+                    break
+
                 if applied_count >= max_applications:
                     break
 

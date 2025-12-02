@@ -12,12 +12,38 @@ services:
       - DATABASE_URL=postgresql+asyncpg://postgres:postgres@db:5432/applybot
       - REDIS_URL=redis://redis:6379/0
       - LOG_LEVEL=DEBUG
+      - SCHEDULER_ENABLED=true
+      - SCHEDULER_AUTO_START=true
+      - SCHEDULER_DEFAULT_HOUR=9
+      - SCHEDULER_DEFAULT_MINUTE=0
+      - SCHEDULER_DEFAULT_DAYS=mon,tue,wed,thu,fri
+      - SCHEDULER_DEFAULT_TIMEZONE=Europe/Moscow
+      - SCHEDULER_MAX_APPLICATIONS=20
     env_file:
       - .env
     volumes:
       - .:/app
     ports:
       - "8001:80"
+    restart: unless-stopped
+
+  worker:
+    build:
+      context: .
+      target: dev-final
+    entrypoint: ["/app/entrypoint.sh"]
+    command: ["rq", "worker", "applybot", "--with-scheduler"]
+    depends_on:
+      - db
+      - redis
+    environment:
+      - DATABASE_URL=postgresql+asyncpg://postgres:postgres@db:5432/applybot
+      - REDIS_URL=redis://redis:6379/0
+    env_file:
+      - .env
+    volumes:
+      - .:/app
+    restart: unless-stopped
 
   frontend:
     build:
@@ -29,6 +55,7 @@ services:
       - ./app/static:/usr/share/nginx/html
     depends_on:
       - app
+    restart: unless-stopped
 
   db:
     image: postgres:15
@@ -41,13 +68,18 @@ services:
       - db-data:/var/lib/postgresql/data
     ports:
       - "5434:5432"
+    restart: unless-stopped
 
   redis:
     image: redis:7
     command: ["redis-server", "--appendonly", "yes"]
+    volumes:
+      - redis-data:/data
     ports:
       - "6380:6379"
+    restart: unless-stopped
 
 volumes:
   db-data:
+  redis-data:
 

@@ -2,6 +2,14 @@ const API_BASE_URL = typeof CONFIG !== 'undefined' ? CONFIG.API_BASE_URL : '';
 const AUTH_ENDPOINTS = typeof CONFIG !== 'undefined' ? CONFIG.AUTH_ENDPOINTS : { login: '/auth/login', status: '/auth/status' };
 const APPLY_ENDPOINTS = typeof CONFIG !== 'undefined' ? CONFIG.APPLY_ENDPOINTS : { bulk: '/apply/bulk' };
 const HH_ENDPOINTS = typeof CONFIG !== 'undefined' ? CONFIG.HH_ENDPOINTS : { profile: '/hh/profile', resumes: '/hh/resumes' };
+const SCHEDULER_ENDPOINTS = typeof CONFIG !== 'undefined' ? CONFIG.SCHEDULER_ENDPOINTS : {
+    status: '/scheduler/status',
+    settings: '/scheduler/settings',
+    enable: '/scheduler/enable',
+    disable: '/scheduler/disable',
+    run: '/scheduler/run',
+    history: '/scheduler/history'
+};
 const HH_DAILY_LIMIT = typeof CONFIG !== 'undefined' ? CONFIG.HH_LIMITS.DAILY_LIMIT : 200;
 const HH_WARNING_THRESHOLD = typeof CONFIG !== 'undefined' ? CONFIG.HH_LIMITS.WARNING_THRESHOLD : 150;
 const HH_MAX_PER_REQUEST = typeof CONFIG !== 'undefined' ? CONFIG.HH_LIMITS.MAX_PER_REQUEST : 50;
@@ -621,5 +629,374 @@ document.addEventListener('DOMContentLoaded', () => {
 
         applyResults.classList.remove('hidden');
         applyResults.scrollIntoView({ behavior: 'smooth' });
+    }
+
+    // ==================== SCHEDULER FUNCTIONALITY ====================
+    
+    const schedulerEnabled = document.getElementById('scheduler-enabled');
+    const schedulerStatusText = document.getElementById('scheduler-status-text');
+    const nextRunInfo = document.getElementById('next-run-info');
+    const scheduleHour = document.getElementById('schedule-hour');
+    const scheduleMinute = document.getElementById('schedule-minute');
+    const scheduleTimezone = document.getElementById('schedule-timezone');
+    const scheduleMaxApplications = document.getElementById('schedule-max-applications');
+    const scheduleUseFormParams = document.getElementById('schedule-use-form-params');
+    const saveSchedulerBtn = document.getElementById('save-scheduler-btn');
+    const runNowBtn = document.getElementById('run-now-btn');
+    const stopJobBtn = document.getElementById('stop-job-btn');
+    const lastRunTime = document.getElementById('last-run-time');
+    const lastRunResult = document.getElementById('last-run-result');
+    const lastRunCount = document.getElementById('last-run-count');
+    const totalApplications = document.getElementById('total-applications');
+    const schedulerHistoryList = document.getElementById('scheduler-history-list');
+
+    // Auto-polling for scheduler status
+    let schedulerPollingInterval = null;
+    
+    function startSchedulerPolling() {
+        if (schedulerPollingInterval) return;
+        schedulerPollingInterval = setInterval(() => {
+            loadSchedulerStatus();
+            loadSchedulerHistory();
+        }, 5000); // Poll every 5 seconds
+    }
+    
+    function stopSchedulerPolling() {
+        if (schedulerPollingInterval) {
+            clearInterval(schedulerPollingInterval);
+            schedulerPollingInterval = null;
+        }
+    }
+
+    // Initialize scheduler UI
+    if (schedulerEnabled) {
+        loadSchedulerStatus();
+        loadSchedulerHistory();
+
+        schedulerEnabled.addEventListener('change', handleSchedulerToggle);
+        saveSchedulerBtn.addEventListener('click', saveSchedulerSettings);
+        runNowBtn.addEventListener('click', triggerManualRun);
+        stopJobBtn.addEventListener('click', stopRunningJob);
+    }
+
+    async function loadSchedulerStatus() {
+        try {
+            const response = await fetch(API_BASE_URL + SCHEDULER_ENDPOINTS.status, {
+                method: 'GET',
+                credentials: 'include'
+            });
+
+            if (!response.ok) {
+                throw new Error('Failed to load scheduler status');
+            }
+
+            const data = await response.json();
+            updateSchedulerUI(data);
+        } catch (error) {
+            schedulerStatusText.textContent = 'Ошибка загрузки';
+            schedulerStatusText.style.color = '#f44336';
+        }
+    }
+
+    function updateSchedulerUI(data) {
+        const isRunning = data.scheduler_running;
+        const userSettings = data.user_settings;
+
+        if (isRunning) {
+            schedulerStatusText.textContent = userSettings?.enabled ? '✅ Активен' : '⏸️ Остановлен';
+            schedulerStatusText.style.color = userSettings?.enabled ? '#4CAF50' : '#ff9800';
+        } else {
+            schedulerStatusText.textContent = '❌ Не запущен';
+            schedulerStatusText.style.color = '#f44336';
+        }
+
+        if (data.next_scheduled_run) {
+            const nextRun = new Date(data.next_scheduled_run);
+            nextRunInfo.textContent = `Следующий запуск: ${nextRun.toLocaleString('ru-RU')}`;
+        } else {
+            nextRunInfo.textContent = '';
+        }
+
+        if (userSettings) {
+            schedulerEnabled.checked = userSettings.enabled;
+            
+            if (userSettings.schedule) {
+                scheduleHour.value = userSettings.schedule.hour;
+                scheduleMinute.value = userSettings.schedule.minute;
+                scheduleTimezone.value = userSettings.schedule.timezone;
+                
+                // Set days checkboxes
+                const days = userSettings.schedule.days.split(',');
+                document.querySelectorAll('input[name="schedule-day"]').forEach(cb => {
+                    cb.checked = days.includes(cb.value);
+                });
+            }
+
+            scheduleMaxApplications.value = userSettings.max_applications_per_run;
+
+            // Statistics
+            if (userSettings.last_run_at) {
+                const lastRun = new Date(userSettings.last_run_at);
+                lastRunTime.textContent = lastRun.toLocaleString('ru-RU');
+            }
+            
+            const validStatuses = ['completed', 'failed', 'running'];
+            const safeStatus = validStatuses.includes(userSettings.last_run_status) 
+                ? userSettings.last_run_status 
+                : '—';
+            lastRunResult.textContent = safeStatus;
+            lastRunCount.textContent = userSettings.last_run_applications || 0;
+            totalApplications.textContent = userSettings.total_applications || 0;
+
+            if (userSettings.next_run_at) {
+                const nextRun = new Date(userSettings.next_run_at);
+                nextRunInfo.textContent = `Следующий запуск: ${nextRun.toLocaleString('ru-RU')}`;
+            }
+        }
+    }
+
+    async function handleSchedulerToggle() {
+        // Save settings with the new enabled state
+        // This ensures settings exist before enabling
+        const success = await saveSchedulerSettings();
+        if (!success) {
+            schedulerEnabled.checked = !schedulerEnabled.checked;
+        }
+    }
+
+    async function saveSchedulerSettings() {
+        const days = Array.from(document.querySelectorAll('input[name="schedule-day"]:checked'))
+            .map(cb => cb.value)
+            .join(',');
+
+        if (!days) {
+            showNotification('Выберите хотя бы один день недели', 'error');
+            return false;
+        }
+
+        // Build search criteria from form or use current form values
+        let searchCriteria = null;
+        if (scheduleUseFormParams.checked) {
+            const positionVal = position.value.trim();
+            const resumeIdVal = resumeId.value.trim();
+
+            if (!positionVal || !resumeIdVal) {
+                showNotification('Заполните поля "Position" и выберите резюме в форме выше', 'error');
+                return false;
+            }
+
+            searchCriteria = {
+                position: positionVal,
+                resume_id: resumeIdVal,
+                skills: skills.value.trim() || null,
+                experience: experience.value.trim() || null,
+                exclude_companies: excludeCompanies.value.trim() 
+                    ? excludeCompanies.value.split(',').map(c => c.trim())
+                    : null,
+                salary_min: salaryMin.value.trim() ? parseInt(salaryMin.value) : null,
+                remote_only: remoteOnly.checked,
+                experience_level: experienceLevel.value || null,
+                use_cover_letter: useAiAssistant.checked
+            };
+        }
+
+        const requestData = {
+            enabled: schedulerEnabled.checked,
+            schedule: {
+                hour: parseInt(scheduleHour.value) || 9,
+                minute: parseInt(scheduleMinute.value) || 0,
+                days: days,
+                timezone: scheduleTimezone.value || 'Europe/Moscow'
+            },
+            max_applications_per_run: parseInt(scheduleMaxApplications.value) || 10,
+            search_criteria: searchCriteria
+        };
+
+        saveSchedulerBtn.disabled = true;
+        saveSchedulerBtn.textContent = 'Сохранение...';
+
+        try {
+            const response = await fetch(API_BASE_URL + SCHEDULER_ENDPOINTS.settings, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify(requestData),
+                credentials: 'include'
+            });
+
+            if (!response.ok) {
+                const error = await response.json();
+                throw new Error(error.detail || 'Failed to save settings');
+            }
+
+            const statusMsg = schedulerEnabled.checked 
+                ? '✅ Планировщик включен' 
+                : '⏸️ Планировщик отключен';
+            showNotification(statusMsg, 'success');
+            loadSchedulerStatus();
+            return true;
+        } catch (error) {
+            showNotification('Ошибка сохранения настроек', 'error');
+            return false;
+        } finally {
+            saveSchedulerBtn.disabled = false;
+            saveSchedulerBtn.textContent = '💾 Сохранить настройки';
+        }
+    }
+
+    async function triggerManualRun() {
+        const maxApps = parseInt(scheduleMaxApplications.value) || 10;
+
+        runNowBtn.disabled = true;
+        runNowBtn.textContent = 'Запуск...';
+
+        try {
+            const response = await fetch(API_BASE_URL + SCHEDULER_ENDPOINTS.run, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify({ max_applications: maxApps }),
+                credentials: 'include'
+            });
+
+            if (!response.ok) {
+                const error = await response.json();
+                throw new Error(error.detail || 'Failed to trigger run');
+            }
+
+            const result = await response.json();
+            // Use static message for security - API message is only for logging
+            showNotification('Запуск начат', 'success');
+
+            // Refresh status after a delay
+            setTimeout(() => {
+                loadSchedulerStatus();
+                loadSchedulerHistory();
+            }, 2000);
+        } catch (error) {
+            showNotification('Ошибка запуска', 'error');
+        } finally {
+            runNowBtn.disabled = false;
+            runNowBtn.textContent = '▶️ Запустить сейчас';
+        }
+    }
+
+    async function stopRunningJob() {
+        stopJobBtn.disabled = true;
+        stopJobBtn.textContent = 'Останавливаем...';
+
+        try {
+            const response = await fetch(API_BASE_URL + SCHEDULER_ENDPOINTS.stop, {
+                method: 'POST',
+                credentials: 'include'
+            });
+
+            if (!response.ok) {
+                const error = await response.json();
+                throw new Error(error.detail || 'Failed to stop job');
+            }
+
+            showNotification('⏹️ Остановка запрошена', 'success');
+
+            // Refresh status after a delay
+            setTimeout(() => {
+                loadSchedulerStatus();
+                loadSchedulerHistory();
+            }, 2000);
+        } catch (error) {
+            showNotification('Ошибка остановки', 'error');
+        } finally {
+            stopJobBtn.disabled = false;
+            stopJobBtn.textContent = '⏹️ Остановить';
+        }
+    }
+
+    async function loadSchedulerHistory() {
+        try {
+            const response = await fetch(API_BASE_URL + SCHEDULER_ENDPOINTS.history + '?limit=10', {
+                method: 'GET',
+                credentials: 'include'
+            });
+
+            if (!response.ok) {
+                throw new Error('Failed to load history');
+            }
+
+            const data = await response.json();
+            displaySchedulerHistory(data.runs || []);
+        } catch (error) {
+            schedulerHistoryList.innerHTML = '<p style="color: #666;">Не удалось загрузить историю</p>';
+        }
+    }
+
+    function displaySchedulerHistory(runs) {
+        schedulerHistoryList.innerHTML = '';
+
+        if (!runs || runs.length === 0) {
+            const noHistory = document.createElement('p');
+            noHistory.style.color = '#666';
+            noHistory.textContent = 'История запусков пуста';
+            schedulerHistoryList.appendChild(noHistory);
+            stopSchedulerPolling();
+            stopJobBtn.style.display = 'none';
+            runNowBtn.style.display = 'inline-block';
+            return;
+        }
+
+        // Check if there's a running job and start/stop polling
+        const hasRunningJob = runs.some(run => run.status === 'running');
+        if (hasRunningJob) {
+            startSchedulerPolling();
+            stopJobBtn.style.display = 'inline-block';
+            runNowBtn.style.display = 'none';
+        } else {
+            stopSchedulerPolling();
+            stopJobBtn.style.display = 'none';
+            runNowBtn.style.display = 'inline-block';
+        }
+
+        const validStatuses = ['completed', 'failed', 'running'];
+
+        runs.forEach(run => {
+            const runItem = document.createElement('div');
+            const safeStatus = validStatuses.includes(run.status) ? run.status : 'unknown';
+            runItem.className = `result-item ${safeStatus === 'completed' ? 'success' : safeStatus === 'failed' ? 'error' : ''}`;
+
+            const startedAt = new Date(run.started_at);
+            const finishedAt = run.finished_at ? new Date(run.finished_at) : null;
+
+            const header = document.createElement('h4');
+            header.textContent = `Запуск ${startedAt.toLocaleString('ru-RU')}`;
+            runItem.appendChild(header);
+
+            const statusP = document.createElement('p');
+            statusP.innerHTML = `<strong>Статус:</strong> ${escapeHtml(safeStatus)}`;
+            runItem.appendChild(statusP);
+
+            const statsP = document.createElement('p');
+            statsP.textContent = `Отправлено: ${run.applications_sent || 0} | Пропущено: ${run.applications_skipped || 0} | Ошибок: ${run.applications_failed || 0}`;
+            runItem.appendChild(statsP);
+
+            if (finishedAt) {
+                const durationMs = finishedAt - startedAt;
+                const durationMin = Math.round(durationMs / 60000);
+                const durationP = document.createElement('p');
+                durationP.style.color = '#666';
+                durationP.style.fontSize = '0.9em';
+                durationP.textContent = `Длительность: ${durationMin} мин`;
+                runItem.appendChild(durationP);
+            }
+
+            if (run.error_message) {
+                const errorP = document.createElement('p');
+                errorP.style.color = '#f44336';
+                errorP.textContent = `Ошибка: ${run.error_message}`;
+                runItem.appendChild(errorP);
+            }
+
+            schedulerHistoryList.appendChild(runItem);
+        });
     }
 });

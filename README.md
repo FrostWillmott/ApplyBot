@@ -4,7 +4,7 @@ Automated job application system for hh.ru with AI-powered cover letter generati
 
 ## 🚧 Project Status
 
-**🟢 Working** (Last update: November 2025)
+**🟢 Working** (Last update: December 2025)
 
 ### ✅ Features
 - OAuth authentication with hh.ru
@@ -16,11 +16,12 @@ Automated job application system for hh.ru with AI-powered cover letter generati
   - Auto language detection (RU/EN based on vacancy)
 - Skip already applied vacancies (fetched from HH.ru API)
 - Bulk applications with progress tracking
+- **Scheduler** for automated daily applications
 - Daily application counter (200 limit with hard block)
 - Completion notifications (sound + browser)
 - Rate limiting protection (429 handling)
 - FastAPI + SQLAlchemy async architecture
-- Docker development/production environments
+- Docker development environment
 
 ### 🔄 Duplicate Prevention
 
@@ -44,6 +45,7 @@ This prevents wasting daily quota on duplicates.
 - **asyncpg** - async PostgreSQL driver
 - **Alembic** - database migrations
 - **Redis** + **RQ** - task queue
+- **APScheduler** - job scheduling
 
 ### AI/ML
 - **Anthropic Claude** - text generation
@@ -85,36 +87,24 @@ Then edit `.env` and fill in your credentials:
 
 Other variables have sensible defaults for Docker setup.
 
-3. **Start development environment**
+3. **Start the application**
 ```bash
-docker compose -f docker-compose.dev.yml up -d
+docker compose up -d
 
 # View logs
-docker compose -f docker-compose.dev.yml logs -f app
+docker compose logs -f app
 ```
 
 Application available at `http://localhost:8000`
 
-### Production
+### Services
 
-```bash
-docker compose -f docker-compose.prod.yml up -d
-```
-
-### Docker Compose: Dev vs Prod
-
-| Feature | `docker-compose.dev.yml` | `docker-compose.prod.yml` |
-|---------|--------------------------|---------------------------|
-| **Hot reload** | ✅ `--reload` + volume mounts | ❌ No |
-| **Log level** | `DEBUG` | `INFO` |
-| **Worker service** | ❌ No | ✅ RQ worker with scheduler |
-| **Restart policy** | None | `unless-stopped` |
-| **Ports** | `8000`, `8001`, `5434`, `6380` | `80` only |
-| **DB auth** | Trust (no password) | Password required |
-| **Redis persistence** | ❌ No | ✅ Volume mount |
-| **Static files** | Volume mount (live edit) | Baked into image |
-
-Both use the same `.env` file for credentials.
+| Service | Port | Description |
+|---------|------|-------------|
+| Frontend (nginx) | 8000 | Web interface |
+| Backend (FastAPI) | 8001 | API server |
+| PostgreSQL | 5434 | Database |
+| Redis | 6380 | Task queue |
 
 ### Local Development (without Docker)
 
@@ -126,7 +116,7 @@ poetry install
 poetry shell
 
 # Start PostgreSQL and Redis
-docker compose -f docker-compose.dev.yml up db redis -d
+docker compose up db redis -d
 
 # Run migrations
 alembic upgrade head
@@ -162,6 +152,13 @@ Content-Type: application/json
   "use_cover_letter": true
 }
 ```
+
+### 4. Scheduler
+
+The scheduler allows automated daily applications:
+- Configure via web interface or API (`/scheduler/*`)
+- Set preferred time, days, and limits
+- Automatically runs bulk applications on schedule
 
 ## 🤖 AI Assistant
 
@@ -215,6 +212,16 @@ The frontend tracks daily application count in browser localStorage:
 
 > **Note:** HH.ru limits may vary by account type. Premium accounts may have higher limits.
 
+### Scheduler Settings
+
+| Parameter | Default | Description |
+|-----------|---------|-------------|
+| `SCHEDULER_DEFAULT_HOUR` | 9 | Default run hour |
+| `SCHEDULER_DEFAULT_MINUTE` | 0 | Default run minute |
+| `SCHEDULER_DEFAULT_DAYS` | mon-fri | Days to run |
+| `SCHEDULER_DEFAULT_TIMEZONE` | Europe/Moscow | Timezone |
+| `SCHEDULER_MAX_APPLICATIONS` | 20 | Max applications per run |
+
 ## 📁 Project Structure
 
 ```
@@ -232,11 +239,11 @@ ApplyBot/
 │   │   ├── styles.css     # Styles
 │   │   └── index.html     # Main page
 │   ├── utils/             # Utilities
+│   ├── tasks.py           # RQ background tasks
 │   └── main.py            # Entry point
 ├── alembic/               # Database migrations
-├── docker-compose.dev.yml # Development config
-├── docker-compose.prod.yml# Production config
-├── Dockerfile             # Multi-stage build
+├── docker-compose.yml     # Docker configuration
+├── Dockerfile             # Application image
 ├── Dockerfile.frontend    # Nginx frontend
 ├── nginx.conf             # Nginx configuration
 ├── pyproject.toml         # Dependencies

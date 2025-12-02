@@ -1,7 +1,8 @@
-import secrets
-from typing import Optional
+"""Authentication router for HH.ru OAuth flow."""
 
-from fastapi import APIRouter, HTTPException, Response, Cookie
+import secrets
+
+from fastapi import APIRouter, Cookie, HTTPException, Response
 from fastapi.responses import JSONResponse, RedirectResponse
 from starlette.requests import Request
 
@@ -58,7 +59,7 @@ async def callback(code: str, state: str, response: Response):
         max_age=token_data["expires_in"],
         httponly=True,
         samesite="lax",
-        secure=False,
+        secure=settings.cookie_secure,
     )
     redirect_response.set_cookie(
         key="hh_token_id",
@@ -74,7 +75,7 @@ async def callback(code: str, state: str, response: Response):
 @router.get("/status")
 async def auth_status(
     request: Request,
-    hh_access_token: Optional[str] = Cookie(None),
+    hh_access_token: str | None = Cookie(None),
 ):
     """Check user authentication status."""
     if hh_access_token:

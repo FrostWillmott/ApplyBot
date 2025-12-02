@@ -110,6 +110,101 @@
                 <div id="apply-results-list" class="results-list"></div>
             </div>
         </section>
+
+        <section id="scheduler-section" class="card">
+            <h2>⏰ Автоматические отклики по расписанию</h2>
+            <p style="color: #666; margin-bottom: 1rem;">Настройте автоматическую отправку откликов по расписанию. Бот будет искать вакансии и откликаться за вас.</p>
+            
+            <div id="scheduler-status-box" class="status-box" style="margin-bottom: 1rem;">
+                <p>Статус планировщика: <span id="scheduler-status-text" style="font-weight: bold;">Загрузка...</span></p>
+                <p id="next-run-info" style="font-size: 0.9em; color: #666;"></p>
+            </div>
+
+            <div class="form-row">
+                <div class="form-group checkbox-group">
+                    <input type="checkbox" id="scheduler-enabled">
+                    <label for="scheduler-enabled">🚀 Включить автоматические отклики</label>
+                </div>
+            </div>
+
+            <div id="scheduler-settings" class="scheduler-settings">
+                <h3>Расписание</h3>
+                <div class="form-row">
+                    <div class="form-group">
+                        <label for="schedule-hour">Час запуска (0-23):</label>
+                        <input type="number" id="schedule-hour" value="9" min="0" max="23">
+                    </div>
+                    <div class="form-group">
+                        <label for="schedule-minute">Минута (0-59):</label>
+                        <input type="number" id="schedule-minute" value="0" min="0" max="59">
+                    </div>
+                </div>
+
+                <div class="form-group">
+                    <label>Дни недели:</label>
+                    <div class="checkbox-row">
+                        <label><input type="checkbox" name="schedule-day" value="mon" checked> Пн</label>
+                        <label><input type="checkbox" name="schedule-day" value="tue" checked> Вт</label>
+                        <label><input type="checkbox" name="schedule-day" value="wed" checked> Ср</label>
+                        <label><input type="checkbox" name="schedule-day" value="thu" checked> Чт</label>
+                        <label><input type="checkbox" name="schedule-day" value="fri" checked> Пт</label>
+                        <label><input type="checkbox" name="schedule-day" value="sat"> Сб</label>
+                        <label><input type="checkbox" name="schedule-day" value="sun"> Вс</label>
+                    </div>
+                </div>
+
+                <div class="form-group">
+                    <label for="schedule-timezone">Часовой пояс:</label>
+                    <select id="schedule-timezone">
+                        <option value="Europe/Moscow">Москва (UTC+3)</option>
+                        <option value="Europe/Kaliningrad">Калининград (UTC+2)</option>
+                        <option value="Europe/Samara">Самара (UTC+4)</option>
+                        <option value="Asia/Yekaterinburg">Екатеринбург (UTC+5)</option>
+                        <option value="Asia/Novosibirsk">Новосибирск (UTC+7)</option>
+                        <option value="Asia/Vladivostok">Владивосток (UTC+10)</option>
+                        <option value="UTC">UTC</option>
+                    </select>
+                </div>
+
+                <div class="form-group">
+                    <label for="schedule-max-applications">Макс. откликов за запуск:</label>
+                    <input type="number" id="schedule-max-applications" value="10" min="1" max="50">
+                </div>
+
+                <h3>Параметры поиска</h3>
+                <p style="color: #666; margin-bottom: 1rem; font-size: 0.9em;">
+                    💡 Используйте параметры из формы выше или задайте отдельные настройки для автоматических откликов.
+                </p>
+                
+                <div class="form-group checkbox-group">
+                    <input type="checkbox" id="schedule-use-form-params" checked>
+                    <label for="schedule-use-form-params">Использовать параметры из основной формы</label>
+                </div>
+                
+                <p style="color: #ff9800; margin: 0.5rem 0; font-size: 0.85em;">
+                    ⚠️ При изменении параметров формы выше, нажмите "Сохранить настройки" чтобы применить их к планировщику.
+                </p>
+
+                <div class="form-row" style="margin-top: 1rem;">
+                    <button id="save-scheduler-btn" class="btn primary">💾 Сохранить настройки</button>
+                    <button id="run-now-btn" class="btn secondary">▶️ Запустить сейчас</button>
+                    <button id="stop-job-btn" class="btn danger" style="display: none;">⏹️ Остановить</button>
+                </div>
+            </div>
+
+            <div id="scheduler-stats" style="margin-top: 1.5rem; padding: 1rem; background: #f9f9f9; border-radius: 4px;">
+                <h3>📊 Статистика</h3>
+                <p>Последний запуск: <span id="last-run-time">—</span></p>
+                <p>Результат: <span id="last-run-result">—</span></p>
+                <p>Откликов отправлено: <span id="last-run-count">0</span></p>
+                <p>Всего откликов: <span id="total-applications">0</span></p>
+            </div>
+
+            <div id="scheduler-history" class="results-container" style="margin-top: 1rem;">
+                <h3>📜 История запусков</h3>
+                <div id="scheduler-history-list" class="results-list"></div>
+            </div>
+        </section>
     </main>
 
     <footer>

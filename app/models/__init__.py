@@ -1,5 +1,10 @@
 from app.models.application import ApplicationHistory
+from app.models.scheduler import SchedulerRunHistory, SchedulerSettings
 from app.models.token import Token
-from app.models.user import User
 
-__all__ = ["ApplicationHistory", "Token", "User"]
+__all__ = [
+    "ApplicationHistory",
+    "SchedulerRunHistory",
+    "SchedulerSettings",
+    "Token",
+]

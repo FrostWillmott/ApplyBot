@@ -27,19 +27,6 @@ def upgrade() -> None:
                     sa.PrimaryKeyConstraint("id")
                     )
 
-    op.create_table("users",
-                    sa.Column("id", sa.Integer(), autoincrement=True, nullable=False),
-                    sa.Column("username", sa.String(length=50), nullable=False),
-                    sa.Column("email", sa.String(length=100), nullable=False),
-                    sa.Column("hashed_password", sa.String(length=255), nullable=False),
-                    sa.Column("is_active", sa.Boolean(), nullable=False),
-                    sa.Column("is_superuser", sa.Boolean(), nullable=False),
-                    sa.Column("created_at", sa.DateTime(), nullable=False),
-                    sa.PrimaryKeyConstraint("id")
-                    )
-    op.create_index(op.f("ix_users_email"), "users", ["email"], unique=True)
-    op.create_index(op.f("ix_users_username"), "users", ["username"], unique=True)
-
     op.create_table("application_history",
                     sa.Column("id", sa.Integer(), autoincrement=True, nullable=False),
                     sa.Column("vacancy_id", sa.String(length=255), nullable=False),
@@ -64,8 +51,5 @@ def downgrade() -> None:
     op.drop_index(op.f("ix_application_history_resume_id"), table_name="application_history")
     op.drop_index(op.f("ix_application_history_applied_at"), table_name="application_history")
     op.drop_table("application_history")
-    op.drop_index(op.f("ix_users_username"), table_name="users")
-    op.drop_index(op.f("ix_users_email"), table_name="users")
-    op.drop_table("users")
     op.drop_table("hh_tokens")
     # ### end Alembic commands ###
