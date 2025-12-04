@@ -1,5 +1,9 @@
 # ApplyBot 🤖
 
+[![CI](https://github.com/FrostWillmott/ApplyBot/actions/workflows/ci.yml/badge.svg)](https://github.com/FrostWillmott/ApplyBot/actions/workflows/ci.yml)
+[![Python 3.11+](https://img.shields.io/badge/python-3.11%2B-blue.svg)](https://www.python.org/downloads/)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
+
 Automated job application system for hh.ru with AI-powered cover letter generation.
 
 ## 🚧 Project Status
@@ -59,7 +63,7 @@ This prevents wasting daily quota on duplicates.
 ## 🚀 Quick Start
 
 ### Prerequisites
-- Python 3.11
+- Python 3.11 or 3.12
 - Docker and Docker Compose
 - hh.ru developer account
 - Anthropic API key
@@ -84,6 +88,7 @@ Then edit `.env` and fill in your credentials:
 | `HH_CLIENT_ID` | HeadHunter OAuth Client ID | [dev.hh.ru/admin](https://dev.hh.ru/admin) |
 | `HH_CLIENT_SECRET` | HeadHunter OAuth Secret | [dev.hh.ru/admin](https://dev.hh.ru/admin) |
 | `ANTHROPIC_API_KEY` | Anthropic API Key | [console.anthropic.com](https://console.anthropic.com/) |
+| `POSTGRES_PASSWORD` | Database password | Set your own secure password |
 
 Other variables have sensible defaults for Docker setup.
 
@@ -226,6 +231,11 @@ The frontend tracks daily application count in browser localStorage:
 
 ```
 ApplyBot/
+├── .github/
+│   ├── workflows/         # CI/CD pipelines
+│   │   ├── ci.yml         # Lint, test, security scan
+│   │   └── cd.yml         # Build & deploy Docker
+│   └── dependabot.yml     # Auto-update dependencies
 ├── app/
 │   ├── core/              # Configuration and utilities
 │   ├── models/            # SQLAlchemy models
@@ -241,13 +251,15 @@ ApplyBot/
 │   ├── utils/             # Utilities
 │   ├── tasks.py           # RQ background tasks
 │   └── main.py            # Entry point
+├── tests/                 # Test suite (pytest)
 ├── alembic/               # Database migrations
 ├── docker-compose.yml     # Docker configuration
 ├── Dockerfile             # Application image
 ├── Dockerfile.frontend    # Nginx frontend
-├── nginx.conf             # Nginx configuration
-├── pyproject.toml         # Dependencies
+├── pyproject.toml         # Dependencies (Poetry)
+├── ruff.toml              # Linter configuration
 ├── .env.example           # Environment template
+├── .pre-commit-config.yaml # Pre-commit hooks
 └── README.md
 ```
 
@@ -265,19 +277,42 @@ alembic upgrade head
 alembic downgrade -1
 ```
 
+### Testing
+```bash
+# Run all tests
+poetry run pytest
+
+# Run with coverage
+poetry run pytest --cov=app --cov-report=html
+
+# Run specific test file
+poetry run pytest tests/test_filters.py -v
+```
+
+Current coverage: **73%** (237 tests)
+
 ### Code Quality
 ```bash
 # Lint
-poetry run ruff check app
+poetry run ruff check app/ tests/
 
 # Auto-fix
-poetry run ruff check --fix app
+poetry run ruff check --fix app/ tests/
 
 # Format
-poetry run ruff format app
+poetry run ruff format app/ tests/
 
 # Type check
 poetry run mypy app
+```
+
+### Pre-commit Hooks
+```bash
+# Install hooks
+poetry run pre-commit install
+
+# Run manually
+poetry run pre-commit run --all-files
 ```
 
 ## 🙏 Acknowledgments
