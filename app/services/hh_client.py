@@ -78,7 +78,7 @@ class HHClient:
         if (
             self._token
             and self._token_expires_at
-            and datetime.now(UTC) < self._token_expires_at
+            and datetime.now(UTC).replace(tzinfo=None) < self._token_expires_at
         ):
             return
 
