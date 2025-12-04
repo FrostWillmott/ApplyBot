@@ -7,6 +7,11 @@ import pytest
 from fastapi.testclient import TestClient
 
 
+def _utc_now() -> datetime:
+    """Return current UTC time as timezone-naive datetime."""
+    return datetime.now(UTC).replace(tzinfo=None)
+
+
 class TestApplyEndpointsIntegration:
     """Integration tests for apply endpoints."""
 
@@ -19,7 +24,7 @@ class TestApplyEndpointsIntegration:
         mock_token.access_token = "valid_token"
         mock_token.refresh_token = "refresh_token"
         mock_token.expires_in = 3600
-        mock_token.obtained_at = datetime.now(UTC)
+        mock_token.obtained_at = _utc_now()
         mock_token.is_expired.return_value = False
 
         with patch("app.core.config.settings") as mock_settings:

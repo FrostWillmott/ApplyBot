@@ -7,6 +7,11 @@ from app.models.scheduler import SchedulerRunHistory, SchedulerSettings
 from app.models.token import Token
 
 
+def _utc_now() -> datetime:
+    """Return current UTC time as timezone-naive datetime."""
+    return datetime.now(UTC).replace(tzinfo=None)
+
+
 class TestApplicationHistory:
     """Tests for ApplicationHistory model."""
 
@@ -16,7 +21,7 @@ class TestApplicationHistory:
             vacancy_id="12345",
             resume_id="resume_123",
             user_id="user_001",
-            applied_at=datetime.now(UTC),
+            applied_at=_utc_now(),
             hh_response={"status": "success"},
         )
         assert app.vacancy_id == "12345"
@@ -26,7 +31,7 @@ class TestApplicationHistory:
     def test_model_with_none_user_id(self):
         """Test creating ApplicationHistory without user_id."""
         app = ApplicationHistory(
-            vacancy_id="12345", resume_id="resume_123", applied_at=datetime.now(UTC)
+            vacancy_id="12345", resume_id="resume_123", applied_at=_utc_now()
         )
         assert app.user_id is None
 
@@ -35,7 +40,7 @@ class TestApplicationHistory:
         app = ApplicationHistory(
             vacancy_id="12345",
             resume_id="resume_123",
-            applied_at=datetime.now(UTC),
+            applied_at=_utc_now(),
             hh_response={},
         )
         assert app.hh_response == {}
@@ -117,7 +122,7 @@ class TestSchedulerRunHistory:
         """Test creating SchedulerRunHistory instance."""
         run = SchedulerRunHistory(
             user_id="user_001",
-            started_at=datetime.now(UTC),
+            started_at=_utc_now(),
             status="running",
             applications_sent=0,
             applications_skipped=0,
@@ -129,7 +134,7 @@ class TestSchedulerRunHistory:
 
     def test_model_completed_run(self):
         """Test creating completed run history."""
-        start_time = datetime.now(UTC)
+        start_time = _utc_now()
         end_time = start_time + timedelta(minutes=5)
 
         run = SchedulerRunHistory(
@@ -150,8 +155,8 @@ class TestSchedulerRunHistory:
         """Test creating run history with error."""
         run = SchedulerRunHistory(
             user_id="user_001",
-            started_at=datetime.now(UTC),
-            finished_at=datetime.now(UTC),
+            started_at=_utc_now(),
+            finished_at=_utc_now(),
             status="failed",
             applications_sent=0,
             applications_skipped=0,
@@ -166,7 +171,7 @@ class TestSchedulerRunHistory:
         details = {"vacancies_searched": 100, "api_calls": 15, "duration_seconds": 120}
         run = SchedulerRunHistory(
             user_id="user_001",
-            started_at=datetime.now(UTC),
+            started_at=_utc_now(),
             status="completed",
             applications_sent=5,
             applications_skipped=10,
@@ -185,7 +190,7 @@ class TestToken:
             access_token="access_token_123",
             refresh_token="refresh_token_456",
             expires_in=3600,
-            obtained_at=datetime.now(UTC),
+            obtained_at=_utc_now(),
         )
         assert token.access_token == "access_token_123"
         assert token.refresh_token == "refresh_token_456"
@@ -197,7 +202,7 @@ class TestToken:
             access_token="access_token_123",
             refresh_token="refresh_token_456",
             expires_in=3600,
-            obtained_at=datetime.now(UTC),
+            obtained_at=_utc_now(),
         )
         assert token.is_expired() is False
 
@@ -207,7 +212,7 @@ class TestToken:
             access_token="access_token_123",
             refresh_token="refresh_token_456",
             expires_in=3600,
-            obtained_at=datetime.now(UTC) - timedelta(hours=2),
+            obtained_at=_utc_now() - timedelta(hours=2),
         )
         assert token.is_expired() is True
 
@@ -218,7 +223,7 @@ class TestToken:
             access_token="access_token_123",
             refresh_token="refresh_token_456",
             expires_in=240,  # 4 minutes
-            obtained_at=datetime.now(UTC),
+            obtained_at=_utc_now(),
         )
         # Should be considered expired due to buffer
         # This depends on implementation details

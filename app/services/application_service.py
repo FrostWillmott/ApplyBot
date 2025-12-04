@@ -351,7 +351,7 @@ class ApplicationService:
                 vacancy_id=vacancy_id,
                 resume_id=request.resume_id,
                 user_id=user_id,
-                applied_at=datetime.now(UTC),
+                applied_at=datetime.now(UTC).replace(tzinfo=None),
                 hh_response=response,
             )
             session.add(application)

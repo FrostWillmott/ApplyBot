@@ -3,6 +3,11 @@
 from datetime import UTC, datetime, timedelta
 
 
+def _utc_now() -> datetime:
+    """Return current UTC time as timezone-naive datetime."""
+    return datetime.now(UTC).replace(tzinfo=None)
+
+
 class TestTokenModel:
     """Tests for Token model methods."""
 
@@ -15,7 +20,7 @@ class TestTokenModel:
             access_token="test_access",
             refresh_token="test_refresh",
             expires_in=3600,  # 1 hour
-            obtained_at=datetime.now(UTC),
+            obtained_at=_utc_now(),
         )
 
         # Should not be expired yet
@@ -30,7 +35,7 @@ class TestTokenModel:
             access_token="test_access",
             refresh_token="test_refresh",
             expires_in=3600,
-            obtained_at=datetime.now(UTC) - timedelta(hours=2),
+            obtained_at=_utc_now() - timedelta(hours=2),
         )
 
         assert token.is_expired() is True
@@ -44,7 +49,7 @@ class TestTokenModel:
             access_token="test_access",
             refresh_token="test_refresh",
             expires_in=120,  # 2 minutes
-            obtained_at=datetime.now(UTC),
+            obtained_at=_utc_now(),
         )
 
         # Depending on buffer, might be expired

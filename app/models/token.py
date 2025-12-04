@@ -9,7 +9,8 @@ from app.core.storage import Base
 
 
 def _utc_now() -> datetime:
-    return datetime.now(UTC)
+    """Return current UTC time as timezone-naive datetime for DB storage."""
+    return datetime.now(UTC).replace(tzinfo=None)
 
 
 class Token(Base):
@@ -26,4 +27,4 @@ class Token(Base):
     def is_expired(self, buffer_seconds: int = 300) -> bool:
         """Check if token is expired (with buffer for safety)."""
         expiry = self.obtained_at + timedelta(seconds=self.expires_in - buffer_seconds)
-        return datetime.now(UTC) > expiry
+        return _utc_now() > expiry

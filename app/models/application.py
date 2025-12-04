@@ -9,7 +9,8 @@ from app.core.storage import Base
 
 
 def _utc_now() -> datetime:
-    return datetime.now(UTC)
+    """Return current UTC time as timezone-naive datetime for DB storage."""
+    return datetime.now(UTC).replace(tzinfo=None)
 
 
 class ApplicationHistory(Base):
