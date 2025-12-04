@@ -1,92 +1,55 @@
-# Standard excludes for Python projects
+# Ruff configuration for ApplyBot
 exclude = [
-    ".bzr",
-    ".direnv",
-    ".eggs",
     ".git",
-    ".git-rewrite",
-    ".hg",
-    ".ipynb_checkpoints",
     ".mypy_cache",
-    ".nox",
-    ".pants.d",
-    ".pyenv",
     ".pytest_cache",
-    ".pytype",
     ".ruff_cache",
-    ".svn",
-    ".tox",
     ".venv",
-    ".vscode",
-    "__pypackages__",
-    "_build",
-    "buck-out",
+    "__pycache__",
     "build",
     "dist",
-    "node_modules",
-    "site-packages",
     "venv",
+    "alembic/versions",
 ]
 
-line-length = 79
-target-version = "py311"  # Using more stable Python version
+line-length = 88
+target-version = "py311"
 
 [lint]
-# Extended rule selection
 select = [
-    "E",   # pycodestyle errors
-    "W",   # pycodestyle warnings
-    "F",   # Pyflakes
-    "D",   # pydocstyle
-    "C901", # McCabe complexity
-    "I",   # isort
-    "N",   # pep8-naming
-    "UP",  # pyupgrade
-    "Q",   # flake8-quotes
-    "RUF", # Ruff-specific rules
-    "B",   # flake8-bugbear
-    "ISC", # implicit-str-concat
+    "E",    # pycodestyle errors
+    "W",    # pycodestyle warnings
+    "F",    # Pyflakes
+    "I",    # isort
+    "UP",   # pyupgrade
+    "B",    # flake8-bugbear
+    "C4",   # flake8-comprehensions
+    "RUF",  # Ruff-specific rules
 ]
 
-# Ignore rules that conflict with Google Style
 ignore = [
-    "D203",  # one-blank-line-before-class
-    "D213",  # multi-line-summary-second-line
-    "D406",  # section-name-ends-in-colon
-    "D407",  # dashed-underline-after-section
-    "E203",  # whitespace before ':'
+    "E501",   # line too long (handled by formatter)
+    "B008",   # function call in default argument (FastAPI Depends)
+    "B904",   # raise without from (acceptable in some cases)
+    "RUF006", # asyncio.create_task without storing reference (intentional fire-and-forget)
+    "RUF012", # mutable class attributes (SQLAlchemy models)
 ]
 
 fixable = ["ALL"]
 unfixable = []
 
-# Allow unused variables when underscore-prefixed
-dummy-variable-rgx = "^(_+|(_+[a-zA-Z0-9_]*[a-zA-Z0-9]+?))$"
-
-[lint.pydocstyle]
-convention = "google"
-
-[lint.pep8-naming]
-classmethod-decorators = [
-    "classmethod",
-    "pyclbr.classmethod",
-    "staticmethod"
-]
-
-[lint.flake8-quotes]
-docstring-quotes = "double"
-inline-quotes = "double"
+[lint.isort]
+known-first-party = ["app"]
+combine-as-imports = true
 
 [lint.per-file-ignores]
-"__init__.py" = ["F401"]    # Unused imports in __init__.py
-"tests/*" = ["D"]           # No docstring requirements in tests
-"conftest.py" = ["D"]       # No docstring requirements in pytest conftest
-"test_*.py" = ["D"]         # No docstring requirements in test files
+"__init__.py" = ["F401"]
+"tests/*" = ["B", "F841"]
+"alembic/*" = ["F401", "E402"]
+"app/services/llm/providers.py" = ["RUF001"]
+"app/services/llm/enhanced_providers.py" = ["RUF001"]
 
 [format]
 quote-style = "double"
 indent-style = "space"
-skip-magic-trailing-comma = false
 line-ending = "auto"
-docstring-code-format = true
-docstring-code-line-length = "dynamic"

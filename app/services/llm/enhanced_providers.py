@@ -10,13 +10,13 @@ logger = logging.getLogger(__name__)
 
 
 class EnhancedClaudeProvider:
-    """Enhanced Claude provider with job application specific methods"""
+    """Enhanced Claude provider with job application specific methods."""
 
-    def __init__(self, api_key: str = None):
+    def __init__(self, api_key: str | None = None):
         self.client = Anthropic(api_key=api_key or settings.anthropic_api_key)
 
     async def generate(self, prompt: str) -> str:
-        """Generate text with improved error handling"""
+        """Generate text with improved error handling."""
         try:
             response = await asyncio.to_thread(
                 self.client.messages.create,
@@ -34,7 +34,7 @@ class EnhancedClaudeProvider:
     async def generate_cover_letter(
         self, vacancy: dict[str, Any], user_profile: dict[str, Any]
     ) -> str:
-        """Generate a personalized cover letter"""
+        """Generate a personalized cover letter."""
         company = vacancy.get("employer", {}).get("name", "the company")
         position = vacancy.get("name", "this position")
         requirements = vacancy.get("snippet", {}).get("requirement", "")
@@ -47,9 +47,7 @@ class EnhancedClaudeProvider:
 
             description = re.sub(r"<[^>]+>", "", description)
 
-        key_skills = [
-            skill.get("name", "") for skill in vacancy.get("key_skills", [])
-        ]
+        key_skills = [skill.get("name", "") for skill in vacancy.get("key_skills", [])]
 
         prompt = f"""Write a professional cover letter for this job application:
 
@@ -96,7 +94,7 @@ Generate ONLY the cover letter text."""
         vacancy: dict[str, Any],
         user_profile: dict[str, Any],
     ) -> list[dict[str, str]]:
-        """Generate answers for screening questions"""
+        """Generate answers for screening questions."""
         if not questions:
             return []
 
@@ -133,7 +131,7 @@ Provide only the numbered answers."""
     def _parse_screening_answers(
         self, response: str, questions: list[dict[str, Any]]
     ) -> list[dict[str, str]]:
-        """Parse LLM response into structured answers"""
+        """Parse LLM response into structured answers."""
         import re
 
         # Split by "Answer X:" pattern
@@ -157,8 +155,6 @@ Provide only the numbered answers."""
             if not answer_text:
                 answer_text = "I am very interested in this opportunity and believe my experience would be valuable for this role."
 
-            structured_answers.append(
-                {"id": question_id, "answer": answer_text}
-            )
+            structured_answers.append({"id": question_id, "answer": answer_text})
 
         return structured_answers

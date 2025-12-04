@@ -1,3 +1,5 @@
+"""Schemas for job application requests and responses."""
+
 from typing import Any
 
 from pydantic import BaseModel, Field
@@ -6,46 +8,42 @@ from pydantic import BaseModel, Field
 class ApplyRequest(BaseModel):
     """Base request for job applications."""
 
-    position: str | None = Field(None, description="Target position or job title (optional, will be taken from resume if not provided)")
-    resume: str | None = Field(None, description="Resume summary or content (optional, will be taken from resume if not provided)")
-    skills: str | None = Field(None, description="Relevant skills (optional, will be taken from resume if not provided)")
-    experience: str | None = Field(None, description="Work experience summary (optional, will be taken from resume if not provided)")
+    position: str | None = Field(None, description="Target position or job title")
+    resume: str | None = Field(None, description="Resume summary or content")
+    skills: str | None = Field(None, description="Relevant skills")
+    experience: str | None = Field(None, description="Work experience summary")
     resume_id: str = Field(..., description="HH.ru resume ID for applications")
 
 
 class BulkApplyRequest(ApplyRequest):
-    """Request for bulk applications with additional search criteria."""
+    """Request for bulk applications with search criteria."""
 
     exclude_companies: list[str] | None = Field(
-        default=None, description="Company names to exclude from applications"
+        default=None, description="Company names to exclude"
     )
-    salary_min: int | None = Field(
-        default=None, description="Minimum salary requirement"
-    )
-    remote_only: bool | None = Field(
-        default=False, description="Only apply to remote positions"
-    )
+    salary_min: int | None = Field(default=None, description="Minimum salary")
+    remote_only: bool = Field(default=False, description="Only remote positions")
     experience_level: str | None = Field(
-        default=None, description="Required experience level (e.g., 'noExperience', 'between1And3', 'between3And6', 'moreThan6')"
+        default=None,
+        description="Experience level (noExperience, between1And3, between3And6, moreThan6)",
     )
     required_skills: list[str] | None = Field(
-        default=None, description="List of required skills that must be present in the vacancy"
+        default=None, description="Required skills in vacancy"
     )
     excluded_keywords: list[str] | None = Field(
-        default=None, description="Keywords to exclude from job descriptions"
+        default=None, description="Keywords to exclude"
     )
     employment_types: list[str] | None = Field(
-        default=None, description="Acceptable employment types (e.g., 'full', 'part', 'project')"
+        default=None, description="Employment types (full, part, project)"
     )
     max_commute_time: int | None = Field(
-        default=None, description="Maximum commute time in minutes"
+        default=None, description="Max commute time in minutes"
     )
     preferred_schedule: list[str] | None = Field(
-        default=None, description="Preferred work schedules (e.g., 'flexible', 'remote', 'shift')"
+        default=None, description="Preferred schedules (flexible, remote, shift)"
     )
     use_cover_letter: bool = Field(
-        default=True, 
-        description="Enable AI assistant: generates cover letter and answers screening questions in vacancy language (RU/EN auto-detect)"
+        default=True, description="Generate AI cover letters"
     )
 
 
@@ -61,7 +59,7 @@ class ApplyResponse(BaseModel):
 
 
 class CoverLetterRequest(BaseModel):
-    """Legacy schema for cover letter generation only."""
+    """Legacy schema for cover letter generation."""
 
     job_title: str
     company: str

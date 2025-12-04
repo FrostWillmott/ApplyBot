@@ -1,4 +1,8 @@
-"""Service layer for business logic."""
+"""Application services."""
 
-from app.services.application_service import ApplicationService, create_application_service
-from app.services.hh_client import HHClient, get_hh_client, get_hh_client_context
+from app.services.application_service import (
+    ApplicationService,
+    create_application_service,
+)
+
+__all__ = ["ApplicationService", "create_application_service"]

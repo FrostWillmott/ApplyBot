@@ -44,9 +44,7 @@ class ClaudeProvider(LLMProvider):
         if description and "<" in description:
             description = re.sub(r"<[^>]+>", "", description)
 
-        key_skills = [
-            skill.get("name", "") for skill in vacancy.get("key_skills", [])
-        ]
+        key_skills = [skill.get("name", "") for skill in vacancy.get("key_skills", [])]
 
         is_russian = any(
             char in (requirements + responsibilities + description)
@@ -226,8 +224,7 @@ Provide only the numbered answers."""
             if not answer_text:
                 sample_text = str(question)
                 is_russian = any(
-                    char in sample_text
-                    for char in "абвгдеёжзийклмнопрстуфхцчшщъыьэюя"
+                    char in sample_text for char in "абвгдеёжзийклмнопрстуфхцчшщъыьэюя"
                 )
 
                 if is_russian:
@@ -235,8 +232,10 @@ Provide only the numbered answers."""
                 else:
                     answer_text = "I am very interested in this opportunity and believe my experience would be valuable for this role."
 
-            structured_answers.append(
-                {"id": question_id, "answer": answer_text}
-            )
+            structured_answers.append({"id": question_id, "answer": answer_text})
 
         return structured_answers
+
+
+# Alias for backwards compatibility
+Sonnet4Provider = ClaudeProvider

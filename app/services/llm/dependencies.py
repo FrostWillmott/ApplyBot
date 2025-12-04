@@ -1,3 +1,5 @@
+"""FastAPI dependencies for LLM providers."""
+
 from collections.abc import AsyncGenerator
 
 from fastapi import Depends
@@ -8,22 +10,21 @@ from app.services.llm.factory import get_llm_provider
 
 
 async def hh_client_dep() -> AsyncGenerator[HHClient, None]:
-    """Dependency for HH client"""
+    """Dependency for HH client."""
     client = HHClient()
     try:
         yield client
     finally:
-        await client.client.aclose()
+        await client.close()
 
 
 def llm_provider_dep(
     provider: LLMProvider = Depends(get_llm_provider),
 ) -> LLMProvider:
-    """FastAPI dependency wrapper returning the chosen LLM provider."""
+    """FastAPI dependency for LLM provider."""
     return provider
 
 
-# Additional convenience dependency for enhanced features
 def enhanced_llm_dep() -> LLMProvider:
-    """Get enhanced LLM provider with job application methods"""
+    """Get enhanced LLM provider with job application methods."""
     return get_llm_provider()

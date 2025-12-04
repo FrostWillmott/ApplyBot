@@ -1,34 +1,46 @@
+"""Application configuration management."""
+
 from typing import Literal
 
-from pydantic import AnyUrl, ConfigDict
+from pydantic import AnyUrl, ConfigDict, Field
 from pydantic_settings import BaseSettings
 
 
 class Settings(BaseSettings):
+    """Application settings loaded from environment variables."""
+
+    # HH.ru OAuth
     hh_client_id: str
     hh_client_secret: str
     hh_redirect_uri: str
+
+    # LLM Configuration
     llm_provider: Literal["sonnet4"] = "sonnet4"
     anthropic_api_key: str
+
+    # Database
     database_url: AnyUrl
 
-    # Cookie settings
-    cookie_secure: bool = True  # Set to False only for local HTTP development
+    # Security
+    cookie_secure: bool = Field(
+        default=True,
+        description="Set to False for local HTTP development",
+    )
 
-    # Scheduler settings
+    # Scheduler
     scheduler_enabled: bool = True
-    scheduler_default_hour: int = 9
-    scheduler_default_minute: int = 0
+    scheduler_default_hour: int = Field(default=9, ge=0, le=23)
+    scheduler_default_minute: int = Field(default=0, ge=0, le=59)
     scheduler_default_days: str = "mon,tue,wed,thu,fri"
     scheduler_default_timezone: str = "Europe/Moscow"
-    scheduler_max_applications: int = 20
+    scheduler_max_applications: int = Field(default=20, ge=1, le=100)
     scheduler_auto_start: bool = True
 
     model_config = ConfigDict(
         env_file=".env",
         env_file_encoding="utf-8",
         case_sensitive=False,
-        extra="allow",
+        extra="ignore",
     )
 
 

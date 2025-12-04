@@ -90,22 +90,22 @@ async def auth_status(
                     "email": user_info.get("email"),
                     "first_name": user_info.get("first_name"),
                     "last_name": user_info.get("last_name"),
-                }
+                },
             )
         except Exception:
             return JSONResponse(
                 status_code=200,
-                content={"authenticated": False, "reason": "Invalid token"}
+                content={"authenticated": False, "reason": "Invalid token"},
             )
 
     token = await TokenStorage.get_latest()
     if token and not token.is_expired():
         return JSONResponse(
             status_code=200,
-            content={"authenticated": True, "source": "database"}
+            content={"authenticated": True, "source": "database"},
         )
 
     return JSONResponse(
         status_code=200,
-        content={"authenticated": False, "reason": "No token found"}
+        content={"authenticated": False, "reason": "No token found"},
     )

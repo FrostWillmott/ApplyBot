@@ -1,56 +1,47 @@
+"""Base class for LLM providers."""
+
 from abc import ABC, abstractmethod
 from typing import Any
 
 
 class LLMProvider(ABC):
-    """Base class for LLM providers."""
+    """Abstract base class for LLM providers."""
 
     @abstractmethod
-    async def generate(self, prompt: str) -> str:
-        """Generate text from a prompt."""
-        pass
-
     async def generate_cover_letter(
         self, vacancy: dict[str, Any], user_profile: dict[str, Any]
     ) -> str:
-        """Generate a cover letter for a job vacancy."""
-        company = vacancy.get("employer", {}).get("name", "the company")
-        position = vacancy.get("name", "this position")
+        """Generate a cover letter for a job application.
 
-        prompt = f"""Write a professional cover letter for {position} at {company}.
+        Args:
+            vacancy: Vacancy details from HH.ru
+            user_profile: User's profile information
 
-Candidate details: {user_profile.get("experience", "N/A")}
-Skills: {user_profile.get("skills", "N/A")}
+        Returns:
+            Generated cover letter text
+        """
+        pass
 
-Generate a concise, professional cover letter."""
-
-        return await self.generate(prompt)
-
+    @abstractmethod
     async def answer_screening_questions(
         self,
-        questions: list[dict[str, Any]],
+        questions: list[dict],
         vacancy: dict[str, Any],
         user_profile: dict[str, Any],
-    ) -> list[dict[str, str]]:
-        """Generate answers for job screening questions."""
-        if not questions:
-            return []
+    ) -> list[dict]:
+        """Answer screening questions for a job application.
 
-        answers = []
-        for i, question in enumerate(questions):
-            question_text = question.get("text", str(question))
+        Args:
+            questions: List of screening questions
+            vacancy: Vacancy details
+            user_profile: User's profile
 
-            prompt = f"""Answer this job screening question professionally:
+        Returns:
+            List of answers with question IDs
+        """
+        pass
 
-Question: {question_text}
-
-Candidate profile: {user_profile.get("experience", "N/A")}
-
-Provide a brief, professional answer."""
-
-            answer = await self.generate(prompt)
-            answers.append(
-                {"id": question.get("id", str(i)), "answer": answer.strip()}
-            )
-
-        return answers
+    def _detect_language(self, text: str) -> str:
+        """Detect if text is Russian or English."""
+        cyrillic_count = sum(1 for c in text if "\u0400" <= c <= "\u04ff")
+        return "ru" if cyrillic_count > len(text) * 0.3 else "en"

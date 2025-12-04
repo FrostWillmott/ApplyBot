@@ -28,9 +28,9 @@ logger = logging.getLogger(__name__)
 
 # Core Task Functions
 def enqueue_single_application(
-        vacancy_id: str,
-        application_request: dict[str, Any],
-        user_id: str = None
+    vacancy_id: str,
+    application_request: dict[str, Any],
+    user_id: str | None = None,
 ) -> Job:
     """Enqueue a single job application task.
 
@@ -50,16 +50,16 @@ def enqueue_single_application(
         application_request,
         user_id,
         job_timeout="5m",  # 5 minute timeout per application
-        description=f"Apply to vacancy {vacancy_id}"
+        description=f"Apply to vacancy {vacancy_id}",
     )
 
     return job
 
 
 def enqueue_bulk_application(
-        bulk_request: dict[str, Any],
-        max_applications: int = 20,
-        user_id: str = None
+    bulk_request: dict[str, Any],
+    max_applications: int = 20,
+    user_id: str | None = None,
 ) -> Job:
     """Enqueue a bulk job application task.
 
@@ -71,7 +71,9 @@ def enqueue_bulk_application(
     Returns:
         RQ Job object for tracking status
     """
-    logger.info(f"Enqueueing bulk application for position: {bulk_request.get('position')}")
+    logger.info(
+        f"Enqueueing bulk application for position: {bulk_request.get('position')}"
+    )
 
     job = applybot_queue.enqueue(
         process_bulk_application,
@@ -79,7 +81,7 @@ def enqueue_bulk_application(
         max_applications,
         user_id,
         job_timeout="30m",  # 30 minute timeout for bulk operations
-        description=f"Bulk apply for {bulk_request.get('position', 'Unknown Position')}"
+        description=f"Bulk apply for {bulk_request.get('position', 'Unknown Position')}",
     )
 
     return job
@@ -87,9 +89,9 @@ def enqueue_bulk_application(
 
 # Task Implementation Functions
 def process_single_application(
-        vacancy_id: str,
-        application_request: dict[str, Any],
-        user_id: str = None
+    vacancy_id: str,
+    application_request: dict[str, Any],
+    user_id: str | None = None,
 ) -> dict[str, Any]:
     """Process a single job application in the background.
 
@@ -100,11 +102,13 @@ def process_single_application(
 
     try:
         # Run async application logic in event loop
-        result = asyncio.run(_apply_to_single_vacancy_async(
-            vacancy_id, application_request, user_id
-        ))
+        result = asyncio.run(
+            _apply_to_single_vacancy_async(vacancy_id, application_request, user_id)
+        )
 
-        logger.info(f"Single application completed: {result['status']} for vacancy {vacancy_id}")
+        logger.info(
+            f"Single application completed: {result['status']} for vacancy {vacancy_id}"
+        )
         return result
 
     except Exception as e:
@@ -113,14 +117,14 @@ def process_single_application(
             "vacancy_id": vacancy_id,
             "status": "error",
             "error_detail": str(e),
-            "timestamp": datetime.utcnow().isoformat()
+            "timestamp": datetime.utcnow().isoformat(),
         }
 
 
 def process_bulk_application(
-        bulk_request: dict[str, Any],
-        max_applications: int = 20,
-        user_id: str = None
+    bulk_request: dict[str, Any],
+    max_applications: int = 20,
+    user_id: str | None = None,
 ) -> dict[str, Any]:
     """Process bulk job applications in the background.
 
@@ -132,19 +136,21 @@ def process_bulk_application(
 
     try:
         # Run async bulk application logic in event loop
-        results = asyncio.run(_process_bulk_application_async(
-            bulk_request, max_applications, user_id
-        ))
+        results = asyncio.run(
+            _process_bulk_application_async(bulk_request, max_applications, user_id)
+        )
 
         success_count = sum(1 for r in results if r.get("status") == "success")
-        logger.info(f"Bulk application completed: {success_count}/{len(results)} successful applications")
+        logger.info(
+            f"Bulk application completed: {success_count}/{len(results)} successful applications"
+        )
 
         return {
             "status": "completed",
             "total_applications": len(results),
             "successful_applications": success_count,
             "results": results,
-            "timestamp": datetime.utcnow().isoformat()
+            "timestamp": datetime.utcnow().isoformat(),
         }
 
     except Exception as e:
@@ -152,15 +158,15 @@ def process_bulk_application(
         return {
             "status": "error",
             "error_detail": str(e),
-            "timestamp": datetime.utcnow().isoformat()
+            "timestamp": datetime.utcnow().isoformat(),
         }
 
 
 # Async Helper Functions
 async def _apply_to_single_vacancy_async(
-        vacancy_id: str,
-        application_request: dict[str, Any],
-        user_id: str = None
+    vacancy_id: str,
+    application_request: dict[str, Any],
+    user_id: str | None = None,
 ) -> dict[str, Any]:
     """Async implementation of single vacancy application."""
     # Initialize clients and services
@@ -172,9 +178,7 @@ async def _apply_to_single_vacancy_async(
         request = ApplyRequest(**application_request)
 
         # Process application
-        result = await app_service.apply_to_single_vacancy(
-            vacancy_id, request, user_id
-        )
+        result = await app_service.apply_to_single_vacancy(vacancy_id, request, user_id)
 
         # Convert response to dict for JSON serialization
         return {
@@ -183,14 +187,14 @@ async def _apply_to_single_vacancy_async(
             "vacancy_title": result.vacancy_title,
             "cover_letter": result.cover_letter,
             "error_detail": result.error_detail,
-            "timestamp": datetime.utcnow().isoformat()
+            "timestamp": datetime.utcnow().isoformat(),
         }
 
 
 async def _process_bulk_application_async(
-        bulk_request: dict[str, Any],
-        max_applications: int,
-        user_id: str = None
+    bulk_request: dict[str, Any],
+    max_applications: int,
+    user_id: str | None = None,
 ) -> list[dict[str, Any]]:
     """Async implementation of bulk application processing."""
     # Initialize clients and services
@@ -202,9 +206,7 @@ async def _process_bulk_application_async(
         request = BulkApplyRequest(**bulk_request)
 
         # Process bulk applications
-        results = await app_service.bulk_apply(
-            request, max_applications, user_id
-        )
+        results = await app_service.bulk_apply(request, max_applications, user_id)
 
         # Convert responses to dicts for JSON serialization
         return [
@@ -227,7 +229,7 @@ def get_queue_status() -> dict[str, Any]:
         "pending_jobs": len(applybot_queue),
         "failed_jobs": len(applybot_queue.failed_job_registry),
         "workers": len(Worker.all(connection=redis_conn)),
-        "timestamp": datetime.utcnow().isoformat()
+        "timestamp": datetime.utcnow().isoformat(),
     }
 
 
@@ -243,7 +245,9 @@ def cleanup_completed_jobs(max_age_hours: int = 24) -> int:
     registry = applybot_queue.finished_job_registry
     cleanup_count = registry.cleanup(max_age_hours * 3600)  # Convert to seconds
 
-    logger.info(f"Cleaned up {cleanup_count} completed jobs older than {max_age_hours} hours")
+    logger.info(
+        f"Cleaned up {cleanup_count} completed jobs older than {max_age_hours} hours"
+    )
     return cleanup_count
 
 
@@ -321,11 +325,7 @@ def start_worker(burst: bool = False):
     """
     logger.info("Starting ApplyBot worker")
 
-    worker = Worker(
-        [applybot_queue],
-        connection=redis_conn,
-        name="applybot-worker"
-    )
+    worker = Worker([applybot_queue], connection=redis_conn, name="applybot-worker")
 
     worker.work(burst=burst)
 

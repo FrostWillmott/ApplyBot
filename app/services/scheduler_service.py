@@ -12,12 +12,6 @@ from sqlalchemy import select, update
 
 from app.core.config import settings
 from app.core.storage import async_session
-
-
-def _now() -> datetime:
-    """Get current time in configured timezone."""
-    tz = ZoneInfo(settings.scheduler_default_timezone)
-    return datetime.now(tz).replace(tzinfo=None)
 from app.models.scheduler import SchedulerRunHistory, SchedulerSettings
 from app.schemas.apply import BulkApplyRequest
 from app.schemas.scheduler import (
@@ -29,6 +23,12 @@ from app.schemas.scheduler import (
 )
 
 logger = logging.getLogger(__name__)
+
+
+def _now() -> datetime:
+    """Get current time in configured timezone."""
+    tz = ZoneInfo(settings.scheduler_default_timezone)
+    return datetime.now(tz).replace(tzinfo=None)
 
 
 class SchedulerService:
@@ -78,7 +78,7 @@ class SchedulerService:
     async def _load_all_user_jobs(self):
         """Load and schedule all enabled user jobs."""
         async with async_session() as session:
-            query = select(SchedulerSettings).where(SchedulerSettings.enabled == True)
+            query = select(SchedulerSettings).where(SchedulerSettings.enabled)
             result = await session.execute(query)
             user_settings = result.scalars().all()
 
@@ -105,11 +105,18 @@ class SchedulerService:
 
         # Parse days
         days_map = {
-            "mon": "0", "tue": "1", "wed": "2", "thu": "3",
-            "fri": "4", "sat": "5", "sun": "6"
+            "mon": "0",
+            "tue": "1",
+            "wed": "2",
+            "thu": "3",
+            "fri": "4",
+            "sat": "5",
+            "sun": "6",
         }
         days = user_settings.schedule_days.lower().split(",")
-        cron_days = ",".join(days_map.get(d.strip(), "0") for d in days if d.strip() in days_map)
+        cron_days = ",".join(
+            days_map.get(d.strip(), "0") for d in days if d.strip() in days_map
+        )
 
         if not cron_days:
             cron_days = "0,1,2,3,4"  # Default to weekdays
@@ -118,7 +125,7 @@ class SchedulerService:
             hour=user_settings.schedule_hour,
             minute=user_settings.schedule_minute,
             day_of_week=cron_days,
-            timezone=user_settings.timezone
+            timezone=user_settings.timezone,
         )
 
         self._scheduler.add_job(
@@ -127,7 +134,7 @@ class SchedulerService:
             id=job_id,
             args=[user_settings.user_id],
             replace_existing=True,
-            misfire_grace_time=3600
+            misfire_grace_time=3600,
         )
 
         next_run = trigger.get_next_fire_time(None, datetime.now())
@@ -151,7 +158,9 @@ class SchedulerService:
 
             async with async_session() as session:
                 # Get user settings
-                query = select(SchedulerSettings).where(SchedulerSettings.user_id == user_id)
+                query = select(SchedulerSettings).where(
+                    SchedulerSettings.user_id == user_id
+                )
                 result = await session.execute(query)
                 user_settings = result.scalar_one_or_none()
 
@@ -165,9 +174,7 @@ class SchedulerService:
 
                 # Create run history entry
                 run_history = SchedulerRunHistory(
-                    user_id=user_id,
-                    started_at=_now(),
-                    status="running"
+                    user_id=user_id, started_at=_now(), status="running"
                 )
                 session.add(run_history)
                 await session.commit()
@@ -178,7 +185,7 @@ class SchedulerService:
                 user_id=user_id,
                 search_criteria=user_settings.search_criteria,
                 max_applications=user_settings.max_applications_per_run,
-                resume_id=user_settings.resume_id
+                resume_id=user_settings.resume_id,
             )
 
             # Update statistics
@@ -198,7 +205,7 @@ class SchedulerService:
                             applications_sent=sent,
                             applications_skipped=skipped,
                             applications_failed=failed,
-                            details={"results": results}
+                            details={"results": results},
                         )
                     )
 
@@ -210,7 +217,7 @@ class SchedulerService:
                         last_run_at=_now(),
                         last_run_status="completed",
                         last_run_applications=sent,
-                        total_applications=SchedulerSettings.total_applications + sent
+                        total_applications=SchedulerSettings.total_applications + sent,
                     )
                 )
                 await session.commit()
@@ -231,17 +238,14 @@ class SchedulerService:
                         .values(
                             finished_at=_now(),
                             status="failed",
-                            error_message=str(e)
+                            error_message=str(e),
                         )
                     )
 
                 await session.execute(
                     update(SchedulerSettings)
                     .where(SchedulerSettings.user_id == user_id)
-                    .values(
-                        last_run_at=_now(),
-                        last_run_status="failed"
-                    )
+                    .values(last_run_at=_now(), last_run_status="failed")
                 )
                 await session.commit()
 
@@ -270,7 +274,7 @@ class SchedulerService:
         user_id: str,
         search_criteria: dict,
         max_applications: int,
-        resume_id: str | None
+        resume_id: str | None,
     ) -> list[dict[str, Any]]:
         """Execute bulk apply using the application service."""
         from app.services.application_service import ApplicationService
@@ -292,7 +296,7 @@ class SchedulerService:
             salary_min=search_criteria.get("salary_min"),
             remote_only=search_criteria.get("remote_only", False),
             experience_level=search_criteria.get("experience_level"),
-            use_cover_letter=search_criteria.get("use_cover_letter", True)
+            use_cover_letter=search_criteria.get("use_cover_letter", True),
         )
 
         # Execute bulk apply with cancellation check
@@ -300,7 +304,7 @@ class SchedulerService:
             request=request,
             max_applications=max_applications,
             user_id=user_id,
-            cancel_check=lambda: self.is_cancel_requested(user_id)
+            cancel_check=lambda: self.is_cancel_requested(user_id),
         )
 
         return [
@@ -308,7 +312,7 @@ class SchedulerService:
                 "vacancy_id": r.vacancy_id,
                 "status": r.status,
                 "vacancy_title": r.vacancy_title,
-                "error_detail": r.error_detail
+                "error_detail": r.error_detail,
             }
             for r in results
         ]
@@ -316,7 +320,9 @@ class SchedulerService:
     async def get_user_settings(self, user_id: str) -> SchedulerSettingsResponse | None:
         """Get scheduler settings for a user."""
         async with async_session() as session:
-            query = select(SchedulerSettings).where(SchedulerSettings.user_id == user_id)
+            query = select(SchedulerSettings).where(
+                SchedulerSettings.user_id == user_id
+            )
             result = await session.execute(query)
             user_settings = result.scalar_one_or_none()
 
@@ -341,7 +347,7 @@ class SchedulerService:
                     hour=user_settings.schedule_hour,
                     minute=user_settings.schedule_minute,
                     days=user_settings.schedule_days,
-                    timezone=user_settings.timezone
+                    timezone=user_settings.timezone,
                 ),
                 max_applications_per_run=user_settings.max_applications_per_run,
                 search_criteria=search_criteria,
@@ -351,17 +357,17 @@ class SchedulerService:
                 total_applications=user_settings.total_applications,
                 next_run_at=next_run_at,
                 created_at=user_settings.created_at,
-                updated_at=user_settings.updated_at
+                updated_at=user_settings.updated_at,
             )
 
     async def update_user_settings(
-        self,
-        user_id: str,
-        request: SchedulerSettingsRequest
+        self, user_id: str, request: SchedulerSettingsRequest
     ) -> SchedulerSettingsResponse:
         """Update scheduler settings for a user."""
         async with async_session() as session:
-            query = select(SchedulerSettings).where(SchedulerSettings.user_id == user_id)
+            query = select(SchedulerSettings).where(
+                SchedulerSettings.user_id == user_id
+            )
             result = await session.execute(query)
             user_settings = result.scalar_one_or_none()
 
@@ -370,13 +376,25 @@ class SchedulerService:
                 user_settings = SchedulerSettings(
                     user_id=user_id,
                     enabled=request.enabled,
-                    schedule_hour=request.schedule.hour if request.schedule else settings.scheduler_default_hour,
-                    schedule_minute=request.schedule.minute if request.schedule else settings.scheduler_default_minute,
-                    schedule_days=request.schedule.days if request.schedule else settings.scheduler_default_days,
-                    timezone=request.schedule.timezone if request.schedule else settings.scheduler_default_timezone,
+                    schedule_hour=request.schedule.hour
+                    if request.schedule
+                    else settings.scheduler_default_hour,
+                    schedule_minute=request.schedule.minute
+                    if request.schedule
+                    else settings.scheduler_default_minute,
+                    schedule_days=request.schedule.days
+                    if request.schedule
+                    else settings.scheduler_default_days,
+                    timezone=request.schedule.timezone
+                    if request.schedule
+                    else settings.scheduler_default_timezone,
                     max_applications_per_run=request.max_applications_per_run,
-                    search_criteria=request.search_criteria.model_dump() if request.search_criteria else None,
-                    resume_id=request.search_criteria.resume_id if request.search_criteria else None
+                    search_criteria=request.search_criteria.model_dump()
+                    if request.search_criteria
+                    else None,
+                    resume_id=request.search_criteria.resume_id
+                    if request.search_criteria
+                    else None,
                 )
                 session.add(user_settings)
             else:
@@ -387,7 +405,9 @@ class SchedulerService:
                     user_settings.schedule_minute = request.schedule.minute
                     user_settings.schedule_days = request.schedule.days
                     user_settings.timezone = request.schedule.timezone
-                user_settings.max_applications_per_run = request.max_applications_per_run
+                user_settings.max_applications_per_run = (
+                    request.max_applications_per_run
+                )
                 if request.search_criteria:
                     user_settings.search_criteria = request.search_criteria.model_dump()
                     user_settings.resume_id = request.search_criteria.resume_id
@@ -401,32 +421,32 @@ class SchedulerService:
             return await self.get_user_settings(user_id)
 
     async def trigger_manual_run(
-        self,
-        user_id: str,
-        max_applications: int = 10
+        self, user_id: str, max_applications: int = 10
     ) -> ManualRunResponse:
         """Trigger a manual run of auto-apply."""
         async with async_session() as session:
-            query = select(SchedulerSettings).where(SchedulerSettings.user_id == user_id)
+            query = select(SchedulerSettings).where(
+                SchedulerSettings.user_id == user_id
+            )
             result = await session.execute(query)
             user_settings = result.scalar_one_or_none()
 
             if not user_settings:
                 return ManualRunResponse(
                     status="error",
-                    message="No scheduler settings found. Please configure settings first."
+                    message="No scheduler settings found. Please configure settings first.",
                 )
 
             if not user_settings.search_criteria:
                 return ManualRunResponse(
                     status="error",
-                    message="No search criteria configured. Please configure settings first."
+                    message="No search criteria configured. Please configure settings first.",
                 )
 
         if self._running_jobs.get(user_id):
             return ManualRunResponse(
                 status="error",
-                message="Auto-apply is already running for this user."
+                message="Auto-apply is already running for this user.",
             )
 
         # Run in background
@@ -434,13 +454,11 @@ class SchedulerService:
 
         return ManualRunResponse(
             status="started",
-            message=f"Manual auto-apply run started with max {max_applications} applications."
+            message=f"Manual auto-apply run started with max {max_applications} applications.",
         )
 
     async def get_run_history(
-        self,
-        user_id: str,
-        limit: int = 20
+        self, user_id: str, limit: int = 20
     ) -> list[SchedulerRunHistory]:
         """Get run history for a user."""
         async with async_session() as session:
@@ -456,10 +474,7 @@ class SchedulerService:
     def get_status(self) -> dict:
         """Get scheduler status."""
         if self._scheduler is None:
-            return {
-                "scheduler_running": False,
-                "jobs_count": 0
-            }
+            return {"scheduler_running": False, "jobs_count": 0}
 
         jobs = self._scheduler.get_jobs()
         next_run = None
@@ -471,7 +486,7 @@ class SchedulerService:
         return {
             "scheduler_running": self._scheduler.running,
             "jobs_count": len(jobs),
-            "next_scheduled_run": next_run
+            "next_scheduled_run": next_run,
         }
 
 
@@ -482,4 +497,3 @@ scheduler_service = SchedulerService()
 async def get_scheduler_service() -> SchedulerService:
     """Dependency to get scheduler service."""
     return scheduler_service
-

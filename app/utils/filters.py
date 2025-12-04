@@ -4,7 +4,7 @@ from app.schemas.apply import BulkApplyRequest
 
 
 class ApplicationFilter:
-    """Local filters for criteria not supported by HH.ru API."""
+    """Filters for criteria not supported by HH.ru API."""
 
     def __init__(self, request: BulkApplyRequest):
         self.request = request
@@ -39,15 +39,18 @@ class ApplicationFilter:
 
         description = vacancy.get("description", "").lower()
         name = vacancy.get("name", "").lower()
-        key_skills = [skill.get("name", "").lower() for skill in vacancy.get("key_skills", [])]
+        key_skills = [
+            skill.get("name", "").lower() for skill in vacancy.get("key_skills", [])
+        ]
 
-        missing_skills = []
-        for required_skill in self.request.required_skills:
-            skill_lower = required_skill.lower()
-            if skill_lower not in key_skills and skill_lower not in description and skill_lower not in name:
-                missing_skills.append(required_skill)
+        missing = []
+        for skill in self.request.required_skills:
+            skill_lower = skill.lower()
+            if skill_lower not in key_skills and skill_lower not in description:
+                if skill_lower not in name:
+                    missing.append(skill)
 
-        return missing_skills
+        return missing
 
     def _check_excluded_keywords(self, vacancy: dict) -> list[str]:
         """Check if vacancy contains any excluded keywords."""
@@ -57,10 +60,10 @@ class ApplicationFilter:
         description = vacancy.get("description", "").lower()
         name = vacancy.get("name", "").lower()
 
-        found_keywords = []
+        found = []
         for keyword in self.request.excluded_keywords:
             keyword_lower = keyword.lower()
             if keyword_lower in description or keyword_lower in name:
-                found_keywords.append(keyword)
+                found.append(keyword)
 
-        return found_keywords
+        return found

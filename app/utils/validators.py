@@ -1,6 +1,6 @@
 """Validation logic for applications."""
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
 from app.schemas.apply import ApplyRequest
 
@@ -8,13 +8,10 @@ from app.schemas.apply import ApplyRequest
 @dataclass
 class ValidationResult:
     """Result of validation process."""
+
     is_valid: bool
     error: str | None = None
-    warnings: list[str] = None
-
-    def __post_init__(self):
-        if self.warnings is None:
-            self.warnings = []
+    warnings: list[str] = field(default_factory=list)
 
 
 async def validate_application_request(request: ApplyRequest) -> ValidationResult:
@@ -33,37 +30,42 @@ async def validate_application_request(request: ApplyRequest) -> ValidationResul
     if not request.resume_id or not request.resume_id.strip():
         return ValidationResult(
             is_valid=False,
-            error="Resume ID is required for application submission"
+            error="Resume ID is required for application submission",
         )
 
     template_indicators = ["lorem ipsum", "sample text", "template"]
-    content_to_check = f"{request.resume or ''} {request.skills or ''} {request.experience or ''}".lower()
+    content = (
+        f"{request.resume or ''} {request.skills or ''} {request.experience or ''}"
+    )
+    content_lower = content.lower()
 
     for indicator in template_indicators:
-        if indicator in content_to_check:
+        if indicator in content_lower:
             return ValidationResult(
                 is_valid=False,
-                error=f"Template content detected: {indicator}"
+                error=f"Template content detected: {indicator}",
             )
 
     return ValidationResult(is_valid=True, warnings=warnings)
 
 
 def validate_bulk_application_limits(
-        max_applications: int,
-        user_daily_limit: int = 100
+    max_applications: int,
+    user_daily_limit: int = 100,
 ) -> ValidationResult:
     """Validate bulk application limits."""
     if max_applications > user_daily_limit:
         return ValidationResult(
             is_valid=False,
-            error=f"Cannot exceed daily limit of {user_daily_limit} applications"
+            error=f"Cannot exceed daily limit of {user_daily_limit} applications",
         )
 
-    if max_applications > 50:  # API safety limit
+    if max_applications > 50:
         return ValidationResult(
             is_valid=True,
-            warnings=[f"High application count ({max_applications}) may trigger rate limits"]
+            warnings=[
+                f"High application count ({max_applications}) may trigger rate limits"
+            ],
         )
 
     return ValidationResult(is_valid=True)

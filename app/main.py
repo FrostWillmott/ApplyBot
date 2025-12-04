@@ -2,11 +2,12 @@
 
 import logging
 import os
+from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse
+from fastapi.staticfiles import StaticFiles
 
 from app.core.config import settings
 from app.core.storage import TokenStorage
@@ -22,10 +23,32 @@ logging.basicConfig(
 
 logger = logging.getLogger(__name__)
 
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    """Application lifespan manager."""
+    logger.info("Initializing application...")
+    await TokenStorage.init_models()
+
+    if settings.scheduler_enabled:
+        logger.info("Starting scheduler...")
+        await scheduler_service.start()
+        logger.info("Scheduler started")
+
+    logger.info("Application initialized")
+
+    yield
+
+    logger.info("Shutting down...")
+    await scheduler_service.stop()
+    logger.info("Shutdown complete")
+
+
 app = FastAPI(
     title="ApplyBot",
     description="Automated job application system for hh.ru",
     version="1.0.0",
+    lifespan=lifespan,
 )
 
 app.add_middleware(
@@ -65,32 +88,8 @@ async def api_info():
 @app.get("/health")
 async def health_check():
     """Health check endpoint."""
-    scheduler_status = scheduler_service.get_status()
     return {
         "status": "healthy",
         "service": "applybot",
-        "scheduler": scheduler_status
+        "scheduler": scheduler_service.get_status(),
     }
-
-
-@app.on_event("startup")
-async def startup_event():
-    """Initialize application."""
-    logger.info("Initializing application...")
-    await TokenStorage.init_models()
-
-    # Start scheduler if enabled
-    if settings.scheduler_enabled:
-        logger.info("Starting scheduler...")
-        await scheduler_service.start()
-        logger.info("Scheduler started successfully")
-
-    logger.info("Application initialized successfully")
-
-
-@app.on_event("shutdown")
-async def shutdown_event():
-    """Cleanup on shutdown."""
-    logger.info("Stopping scheduler...")
-    await scheduler_service.stop()
-    logger.info("Application shutdown complete")

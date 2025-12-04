@@ -13,24 +13,27 @@ from app.core.storage import TokenStorage
 logger = logging.getLogger(__name__)
 
 DEFAULT_HEADERS = {
-    'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-    'Accept': 'application/json',
-    'Accept-Language': 'ru-RU,ru;q=0.9,en;q=0.8',
-    'Accept-Encoding': 'gzip, deflate, br',
-    'DNT': '1',
-    'Connection': 'keep-alive',
-    'Sec-Fetch-Dest': 'empty',
-    'Sec-Fetch-Mode': 'cors',
-    'Sec-Fetch-Site': 'cross-site',
-    'Upgrade-Insecure-Requests': '1',
-    'Referer': 'https://hh.ru/',
-    'Origin': 'https://hh.ru',
+    "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+    "Accept": "application/json",
+    "Accept-Language": "ru-RU,ru;q=0.9,en;q=0.8",
+    "Accept-Encoding": "gzip, deflate, br",
+    "DNT": "1",
+    "Connection": "keep-alive",
+    "Sec-Fetch-Dest": "empty",
+    "Sec-Fetch-Mode": "cors",
+    "Sec-Fetch-Site": "cross-site",
+    "Upgrade-Insecure-Requests": "1",
+    "Referer": "https://hh.ru/",
+    "Origin": "https://hh.ru",
 }
 
 
 class HHAPIError(Exception):
     """HH API error."""
-    def __init__(self, status_code: int, message: str, response_data: dict = None):
+
+    def __init__(
+        self, status_code: int, message: str, response_data: dict | None = None
+    ):
         self.status_code = status_code
         self.message = message
         self.response_data = response_data or {}
@@ -50,7 +53,7 @@ class HHClient:
         self.client = httpx.AsyncClient(
             base_url=self.API_BASE,
             timeout=httpx.Timeout(30.0),
-            limits=httpx.Limits(max_connections=10, max_keepalive_connections=5)
+            limits=httpx.Limits(max_connections=10, max_keepalive_connections=5),
         )
         self._token = None
         self._token_expires_at = None
@@ -72,20 +75,23 @@ class HHClient:
 
     async def _ensure_token(self):
         """Ensure we have a valid access token."""
-        if (self._token and self._token_expires_at and
-                datetime.utcnow() < self._token_expires_at):
+        if (
+            self._token
+            and self._token_expires_at
+            and datetime.utcnow() < self._token_expires_at
+        ):
             return
 
         token = await TokenStorage.get_latest()
         if not token or token.is_expired():
             raise HTTPException(
                 status_code=401,
-                detail="No valid HH.ru token available. Please re-authenticate via /auth/login"
+                detail="No valid HH.ru token available. Please re-authenticate via /auth/login",
             )
 
         self._token = token.access_token
-        self._token_expires_at = (
-                token.obtained_at + timedelta(seconds=token.expires_in - 300)
+        self._token_expires_at = token.obtained_at + timedelta(
+            seconds=token.expires_in - 300
         )
         self.client.headers.update({"Authorization": f"Bearer {self._token}"})
         logger.info("HH token refreshed successfully")
@@ -109,11 +115,11 @@ class HHClient:
         retries = 0
         while True:
             try:
-                response = await self.client.request(
-                    method, endpoint, **kwargs
-                )
+                response = await self.client.request(method, endpoint, **kwargs)
 
-                response_text = response.text.lower() if hasattr(response, 'text') else ""
+                response_text = (
+                    response.text.lower() if hasattr(response, "text") else ""
+                )
                 if (
                     "ddos-guard" in response_text
                     or "checking your browser" in response_text
@@ -128,7 +134,10 @@ class HHClient:
                         raise HHAPIError(
                             429,
                             "Request blocked by DDoS protection. Please try again later.",
-                            {"status_code": response.status_code, "headers": dict(response.headers)}
+                            {
+                                "status_code": response.status_code,
+                                "headers": dict(response.headers),
+                            },
                         )
 
                     # Wait longer for DDoS protection
@@ -141,9 +150,7 @@ class HHClient:
 
                 if response.status_code == 429:
                     retry_after = int(response.headers.get("Retry-After", 60))
-                    logger.warning(
-                        f"Rate limited. Waiting {retry_after} seconds"
-                    )
+                    logger.warning(f"Rate limited. Waiting {retry_after} seconds")
                     await asyncio.sleep(retry_after)
                     continue
 
@@ -156,7 +163,7 @@ class HHClient:
                         raise HHAPIError(
                             response.status_code,
                             f"Gateway error after {max_retries} retries",
-                            {"status_code": response.status_code}
+                            {"status_code": response.status_code},
                         )
 
                     delay = base_delay * (2**retries) + random.uniform(1, 3)
@@ -169,29 +176,40 @@ class HHClient:
                 response.raise_for_status()
 
                 if not response.text or response.text.strip() == "":
-                    return {"status": "success", "status_code": response.status_code}
+                    return {
+                        "status": "success",
+                        "status_code": response.status_code,
+                    }
 
                 try:
                     return response.json()
                 except Exception as e:
                     if response.status_code in [200, 201, 204]:
-                        return {"status": "success", "status_code": response.status_code}
-                    logger.error(f"Failed to parse JSON response: {e}, Response text: {response.text[:500]}")
+                        return {
+                            "status": "success",
+                            "status_code": response.status_code,
+                        }
+                    logger.error(
+                        f"Failed to parse JSON response: {e}, Response text: {response.text[:500]}"
+                    )
                     raise HHAPIError(
                         500,
-                        f"Invalid JSON response: {str(e)}",
-                        {"response_text": response.text[:500]}
+                        f"Invalid JSON response: {e!s}",
+                        {"response_text": response.text[:500]},
                     )
 
             except httpx.HTTPStatusError as e:
-                if (
-                    e.response.status_code < 500
-                    and e.response.status_code not in [429, 408, 502, 503, 504]
-                ):
+                if e.response.status_code < 500 and e.response.status_code not in [
+                    429,
+                    408,
+                    502,
+                    503,
+                    504,
+                ]:
                     error_data = {}
                     try:
                         error_data = e.response.json()
-                    except:
+                    except Exception:
                         error_data = {"message": e.response.text[:500]}
 
                     logger.error(
@@ -207,7 +225,7 @@ class HHClient:
                     error_data = {}
                     try:
                         error_data = e.response.json()
-                    except:
+                    except Exception:
                         error_data = {"message": e.response.text[:500]}
 
                     logger.error(
@@ -231,10 +249,8 @@ class HHClient:
             ) as e:
                 retries += 1
                 if retries > max_retries:
-                    logger.error(
-                        f"Network error after {max_retries} retries: {str(e)}"
-                    )
-                    raise HHAPIError(503, f"Network error: {str(e)}")
+                    logger.error(f"Network error after {max_retries} retries: {e!s}")
+                    raise HHAPIError(503, f"Network error: {e!s}")
 
                 delay = base_delay * (2**retries) + random.uniform(0.5, 1.5)
                 logger.warning(
@@ -244,12 +260,12 @@ class HHClient:
 
     async def search_vacancies(
         self,
-        text: str = None,
-        area: int = None,
-        experience: str = None,
-        employment: str = None,
-        schedule: str = None,
-        salary: int = None,
+        text: str | None = None,
+        area: int | None = None,
+        experience: str | None = None,
+        employment: str | None = None,
+        schedule: str | None = None,
+        salary: int | None = None,
         only_with_salary: bool = False,
         currency: str = "RUR",
         page: int = 0,
@@ -311,14 +327,14 @@ class HHClient:
     async def get_vacancy_questions(self, vacancy_id: str) -> list[dict]:
         """Get screening questions for a vacancy."""
         try:
-            response = await self._make_request("GET", f"/vacancies/{vacancy_id}/questions")
+            response = await self._make_request(
+                "GET", f"/vacancies/{vacancy_id}/questions"
+            )
             return response.get("items", [])
         except HHAPIError as e:
             if e.status_code == 404:
                 return []  # No questions for this vacancy
-            logger.warning(
-                f"Could not fetch questions for vacancy {vacancy_id}: {e}"
-            )
+            logger.warning(f"Could not fetch questions for vacancy {vacancy_id}: {e}")
             return []
 
     async def get_my_resumes(self) -> list[dict]:
@@ -343,11 +359,11 @@ class HHClient:
             raise HTTPException(e.status_code, f"Failed to fetch resume: {e.message}")
 
     async def apply(
-            self,
-            vacancy_id: str,
-            resume_id: str,
-            cover_letter: str | None = None,
-            answers: list[dict] | None = None
+        self,
+        vacancy_id: str,
+        resume_id: str,
+        cover_letter: str | None = None,
+        answers: list[dict] | None = None,
     ) -> dict:
         """Submit application."""
         if cover_letter and cover_letter.strip():
@@ -369,20 +385,21 @@ class HHClient:
                     answer_text = answer.get("answer", "")
                     if question_id and answer_text:
                         form_data[f"answer_{question_id}"] = answer_text.strip()
-                logger.info(f"Adding {len(answers)} screening question answers to application")
+                logger.info(
+                    f"Adding {len(answers)} screening question answers to application"
+                )
 
             apply_headers = DEFAULT_HEADERS.copy()
-            apply_headers.update({
-                'Content-Type': 'application/x-www-form-urlencoded',
-                'Referer': f'https://hh.ru/vacancy/{vacancy_id}',
-                'Origin': 'https://hh.ru',
-            })
+            apply_headers.update(
+                {
+                    "Content-Type": "application/x-www-form-urlencoded",
+                    "Referer": f"https://hh.ru/vacancy/{vacancy_id}",
+                    "Origin": "https://hh.ru",
+                }
+            )
 
             response = await self._make_request(
-                "POST",
-                "/negotiations",
-                data=form_data,
-                headers=apply_headers
+                "POST", "/negotiations", data=form_data, headers=apply_headers
             )
             logger.info(f"Successfully applied to vacancy {vacancy_id}")
             return response or {"status": "success"}
@@ -392,12 +409,11 @@ class HHClient:
                 400: "Invalid application data or already applied to this vacancy",
                 403: "Access denied - you may not be eligible for this vacancy",
                 404: "Vacancy or resume not found",
-                409: "Application already exists for this vacancy"
+                409: "Application already exists for this vacancy",
             }
 
             error_detail = error_messages.get(
-                e.status_code,
-                f"Application failed with HTTP {e.status_code}"
+                e.status_code, f"Application failed with HTTP {e.status_code}"
             )
 
             logger.error(
@@ -407,7 +423,7 @@ class HHClient:
 
             raise HTTPException(
                 status_code=e.status_code,
-                detail=f"Application to vacancy {vacancy_id} failed: {error_detail}"
+                detail=f"Application to vacancy {vacancy_id} failed: {error_detail}",
             )
 
     async def get_my_applications(self, page: int = 0, per_page: int = 20) -> dict:
@@ -416,11 +432,13 @@ class HHClient:
             response = await self._make_request(
                 "GET",
                 "/negotiations",
-                params={"page": page, "per_page": per_page}
+                params={"page": page, "per_page": per_page},
             )
             return response
         except HHAPIError as e:
-            raise HTTPException(e.status_code, f"Failed to fetch applications: {e.message}")
+            raise HTTPException(
+                e.status_code, f"Failed to fetch applications: {e.message}"
+            )
 
     async def get_applied_vacancy_ids(self) -> set[str]:
         """Get set of all vacancy IDs user has already applied to."""
@@ -433,7 +451,7 @@ class HHClient:
                 response = await self._make_request(
                     "GET",
                     "/negotiations",
-                    params={"page": page, "per_page": per_page}
+                    params={"page": page, "per_page": per_page},
                 )
 
                 items = response.get("items", [])
@@ -457,7 +475,9 @@ class HHClient:
                     logger.warning("Reached page limit when fetching applied vacancies")
                     break
 
-            logger.info(f"Found {len(applied_ids)} previously applied vacancies from HH.ru")
+            logger.info(
+                f"Found {len(applied_ids)} previously applied vacancies from HH.ru"
+            )
             return applied_ids
 
         except HHAPIError as e:
@@ -491,7 +511,9 @@ class HHClient:
                 try:
                     if attempt > 0:
                         delay = base_delay * (2 ** (attempt - 1)) + random.uniform(0, 1)
-                        logger.info(f"Token exchange retry {attempt}/{max_retries} after {delay:.2f}s")
+                        logger.info(
+                            f"Token exchange retry {attempt}/{max_retries} after {delay:.2f}s"
+                        )
                         await asyncio.sleep(delay)
 
                     response = await client.post(
@@ -550,7 +572,7 @@ class HHClient:
                 logger.error(f"Token refresh failed: {e.response.text}")
                 raise HTTPException(
                     status_code=400,
-                    detail="Token refresh failed. Please re-authenticate."
+                    detail="Token refresh failed. Please re-authenticate.",
                 )
 
     async def get_areas(self) -> list[dict]:
@@ -567,7 +589,9 @@ class HHClient:
             response = await self._make_request("GET", "/specializations")
             return response
         except HHAPIError as e:
-            raise HTTPException(e.status_code, f"Failed to fetch specializations: {e.message}")
+            raise HTTPException(
+                e.status_code, f"Failed to fetch specializations: {e.message}"
+            )
 
     async def close(self):
         """Close the HTTP client."""
@@ -575,7 +599,10 @@ class HHClient:
 
     async def get_user_info(self, access_token: str) -> dict:
         """Get current user information."""
-        headers = {"Authorization": f"Bearer {access_token}", "User-Agent": "ApplyBot/1.0"}
+        headers = {
+            "Authorization": f"Bearer {access_token}",
+            "User-Agent": "ApplyBot/1.0",
+        }
         async with httpx.AsyncClient() as client:
             response = await client.get("https://api.hh.ru/me", headers=headers)
             response.raise_for_status()
@@ -583,17 +610,29 @@ class HHClient:
 
     async def get_user_resumes(self, access_token: str) -> list[dict]:
         """Get user's resumes list."""
-        headers = {"Authorization": f"Bearer {access_token}", "User-Agent": "ApplyBot/1.0"}
+        headers = {
+            "Authorization": f"Bearer {access_token}",
+            "User-Agent": "ApplyBot/1.0",
+        }
         async with httpx.AsyncClient() as client:
-            response = await client.get("https://api.hh.ru/resumes/mine", headers=headers)
+            response = await client.get(
+                "https://api.hh.ru/resumes/mine", headers=headers
+            )
             response.raise_for_status()
             return response.json().get("items", [])
 
-    async def get_resume_details_by_token(self, access_token: str, resume_id: str) -> dict:
+    async def get_resume_details_by_token(
+        self, access_token: str, resume_id: str
+    ) -> dict:
         """Get detailed resume information by token."""
-        headers = {"Authorization": f"Bearer {access_token}", "User-Agent": "ApplyBot/1.0"}
+        headers = {
+            "Authorization": f"Bearer {access_token}",
+            "User-Agent": "ApplyBot/1.0",
+        }
         async with httpx.AsyncClient() as client:
-            response = await client.get(f"https://api.hh.ru/resumes/{resume_id}", headers=headers)
+            response = await client.get(
+                f"https://api.hh.ru/resumes/{resume_id}", headers=headers
+            )
             response.raise_for_status()
             return response.json()
 
@@ -615,9 +654,13 @@ class HHClient:
             active_resumes = [
                 r for r in resumes if r.get("status", {}).get("id") == "published"
             ]
-            selected_resume_id = active_resumes[0]["id"] if active_resumes else resumes[0]["id"]
+            selected_resume_id = (
+                active_resumes[0]["id"] if active_resumes else resumes[0]["id"]
+            )
 
-        resume = await self.get_resume_details_by_token(access_token, selected_resume_id)
+        resume = await self.get_resume_details_by_token(
+            access_token, selected_resume_id
+        )
         if not resume:
             raise ValueError("Failed to get resume details")
 
@@ -658,10 +701,14 @@ class HHClient:
                     "end": exp.get("end") or "",
                     "description": exp.get("description") or "",
                 }
-                for exp in resume.get("experience", []) if exp
+                for exp in resume.get("experience", [])
+                if exp
             ],
-            "skills": [skill.get("name", "") if isinstance(skill, dict) else str(skill) 
-                      for skill in resume.get("skill_set", []) if skill],
+            "skills": [
+                skill.get("name", "") if isinstance(skill, dict) else str(skill)
+                for skill in resume.get("skill_set", [])
+                if skill
+            ],
             "education": {
                 "level": safe_get(resume, "education", "level", "name"),
                 "primary": [
@@ -671,7 +718,8 @@ class HHClient:
                         "result": edu.get("result") or "",
                         "year": edu.get("year"),
                     }
-                    for edu in resume.get("education", {}).get("primary", []) if edu
+                    for edu in resume.get("education", {}).get("primary", [])
+                    if edu
                 ],
             },
             "languages": [
@@ -679,7 +727,8 @@ class HHClient:
                     "name": lang.get("name") or "",
                     "level": safe_get(lang, "level", "name") or "",
                 }
-                for lang in resume.get("language", []) if lang
+                for lang in resume.get("language", [])
+                if lang
             ],
             "contacts": {
                 "phone": next(
@@ -699,14 +748,12 @@ class HHClient:
                     None,
                 ),
             },
-            "citizenship": [
-                c.get("name") for c in resume.get("citizenship", []) if c
-            ],
-            "work_ticket": [
-                w.get("name") for w in resume.get("work_ticket", []) if w
-            ],
+            "citizenship": [c.get("name") for c in resume.get("citizenship", []) if c],
+            "work_ticket": [w.get("name") for w in resume.get("work_ticket", []) if w],
             "travel_time": safe_get(resume, "travel_time", "name"),
-            "business_trip_readiness": safe_get(resume, "business_trip_readiness", "name"),
+            "business_trip_readiness": safe_get(
+                resume, "business_trip_readiness", "name"
+            ),
             "relocation": safe_get(resume, "relocation", "type", "name"),
         }
 

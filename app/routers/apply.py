@@ -15,8 +15,8 @@ router = APIRouter(prefix="/apply", tags=["apply"])
 
 
 async def get_application_service(
-        hh_client: HHClient = Depends(get_hh_client),
-        llm_provider = Depends(llm_provider_dep)
+    hh_client: HHClient = Depends(get_hh_client),
+    llm_provider=Depends(llm_provider_dep),
 ) -> ApplicationService:
     """Create application service with dependencies."""
     return create_application_service(hh_client, llm_provider)
@@ -24,9 +24,9 @@ async def get_application_service(
 
 @router.post("/single/{vacancy_id}", response_model=ApplyResponse)
 async def apply_to_vacancy(
-        vacancy_id: str,
-        request: ApplyRequest,
-        service: ApplicationService = Depends(get_application_service)
+    vacancy_id: str,
+    request: ApplyRequest,
+    service: ApplicationService = Depends(get_application_service),
 ):
     """Apply to a specific vacancy by ID."""
     try:
@@ -43,10 +43,12 @@ async def apply_to_vacancy(
 
 @router.post("/bulk", response_model=list[ApplyResponse])
 async def bulk_apply(
-        request: BulkApplyRequest,
-        service: ApplicationService = Depends(get_application_service),
-        max_applications: int = Query(default=20, le=50, description="Maximum applications"),
-        pages: int = Query(default=1, le=5, description="Search pages to process")
+    request: BulkApplyRequest,
+    service: ApplicationService = Depends(get_application_service),
+    max_applications: int = Query(
+        default=20, le=50, description="Maximum applications"
+    ),
+    pages: int = Query(default=1, le=5, description="Search pages to process"),
 ):
     """Apply to multiple vacancies matching search criteria."""
     try:
@@ -55,8 +57,7 @@ async def bulk_apply(
             raise HTTPException(status_code=400, detail=validation.error)
 
         results = await service.bulk_apply(
-            request=request,
-            max_applications=max_applications
+            request=request, max_applications=max_applications
         )
 
         return results
@@ -69,17 +70,15 @@ async def bulk_apply(
 
 @router.get("/search")
 async def search_vacancies(
-        text: str,
-        page: int = Query(default=0, ge=0),
-        per_page: int = Query(default=20, le=100),
-        hh_client: HHClient = Depends(get_hh_client)
+    text: str,
+    page: int = Query(default=0, ge=0),
+    per_page: int = Query(default=20, le=100),
+    hh_client: HHClient = Depends(get_hh_client),
 ):
     """Search for vacancies without applying."""
     try:
         results = await hh_client.search_vacancies(
-            text=text,
-            page=page,
-            per_page=per_page
+            text=text, page=page, per_page=per_page
         )
         return results
     except Exception as e:

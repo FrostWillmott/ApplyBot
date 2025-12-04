@@ -1,7 +1,6 @@
 import logging
-from typing import Optional
 
-from fastapi import APIRouter, Depends, Cookie, Request
+from fastapi import APIRouter, Cookie, Depends, Request
 from starlette.responses import JSONResponse
 
 from app.core.storage import TokenStorage
@@ -14,7 +13,7 @@ router = APIRouter(prefix="/hh", tags=["hh"])
 
 @router.get("/resumes")
 async def get_user_resumes(
-    hh_access_token: Optional[str] = Cookie(None),
+    hh_access_token: str | None = Cookie(None),
     hh: HHClient = Depends(get_hh_client),
 ):
     """Get user's resumes from HH.ru."""
@@ -22,8 +21,7 @@ async def get_user_resumes(
         token = await TokenStorage.get_latest()
         if not token or token.is_expired():
             return JSONResponse(
-                status_code=401,
-                content={"detail": "Authentication required"}
+                status_code=401, content={"detail": "Authentication required"}
             )
         access_token = token.access_token
     else:
@@ -46,7 +44,7 @@ async def get_user_resumes(
         logger.error(f"Failed to get resumes: {e}")
         return JSONResponse(
             status_code=500,
-            content={"detail": f"Failed to fetch resumes: {str(e)}"}
+            content={"detail": f"Failed to fetch resumes: {e!s}"},
         )
 
 
@@ -66,7 +64,7 @@ async def vacancies(
 async def get_user_profile(
     request: Request,
     resume_id: str | None = None,
-    hh_access_token: Optional[str] = Cookie(None),
+    hh_access_token: str | None = Cookie(None),
     hh: HHClient = Depends(get_hh_client),
 ):
     """Get user profile from HH.ru for bulk application."""
@@ -75,7 +73,10 @@ async def get_user_profile(
         if not token or token.is_expired():
             return JSONResponse(
                 status_code=401,
-                content={"detail": "Authentication required", "redirect": "/auth/login"}
+                content={
+                    "detail": "Authentication required",
+                    "redirect": "/auth/login",
+                },
             )
         access_token = token.access_token
     else:
@@ -83,8 +84,7 @@ async def get_user_profile(
 
     try:
         profile = await hh.get_user_profile_for_application(
-            access_token=access_token,
-            resume_id=resume_id
+            access_token=access_token, resume_id=resume_id
         )
         return profile
     except ValueError as e:
@@ -92,5 +92,5 @@ async def get_user_profile(
     except Exception as e:
         return JSONResponse(
             status_code=500,
-            content={"detail": f"Failed to fetch profile: {str(e)}"}
+            content={"detail": f"Failed to fetch profile: {e!s}"},
         )
