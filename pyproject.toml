@@ -68,7 +68,6 @@ omit = [
     "app/tasks.py",
     "app/services/hh_client.py",
     "app/services/scheduler_service.py",
-    "app/services/llm/enhanced_providers.py",
     "app/services/llm/providers.py",
 ]
 

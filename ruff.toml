@@ -47,7 +47,6 @@ combine-as-imports = true
 "tests/*" = ["B", "F841"]
 "alembic/*" = ["F401", "E402"]
 "app/services/llm/providers.py" = ["RUF001"]
-"app/services/llm/enhanced_providers.py" = ["RUF001"]
 
 [format]
 quote-style = "double"

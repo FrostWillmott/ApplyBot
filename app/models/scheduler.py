@@ -1,11 +1,15 @@
 """Scheduler models for auto-apply functionality."""
 
-from datetime import datetime
+from datetime import UTC, datetime
 
 from sqlalchemy import JSON, Boolean, DateTime, Integer, String, Text
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.core.storage import Base
+
+
+def _utc_now() -> datetime:
+    return datetime.now(UTC)
 
 
 class SchedulerSettings(Base):
@@ -41,10 +45,10 @@ class SchedulerSettings(Base):
     total_applications: Mapped[int] = mapped_column(Integer, default=0)
 
     created_at: Mapped[datetime] = mapped_column(
-        DateTime, default=datetime.utcnow, nullable=False
+        DateTime, default=_utc_now, nullable=False
     )
     updated_at: Mapped[datetime] = mapped_column(
-        DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False
+        DateTime, default=_utc_now, onupdate=_utc_now, nullable=False
     )
 
 

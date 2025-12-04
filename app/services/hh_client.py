@@ -1,7 +1,7 @@
 import asyncio
 import logging
 import random
-from datetime import datetime, timedelta
+from datetime import UTC, datetime, timedelta
 from typing import Any
 
 import httpx
@@ -78,7 +78,7 @@ class HHClient:
         if (
             self._token
             and self._token_expires_at
-            and datetime.utcnow() < self._token_expires_at
+            and datetime.now(UTC) < self._token_expires_at
         ):
             return
 
@@ -535,7 +535,7 @@ class HHClient:
 
                     response.raise_for_status()
                     token_data = response.json()
-                    token_data["obtained_at"] = datetime.utcnow()
+                    token_data["obtained_at"] = datetime.now(UTC)
                     return token_data
 
                 except httpx.HTTPStatusError as e:
@@ -566,7 +566,7 @@ class HHClient:
                 response = await client.post(self.TOKEN_URL, data=data)
                 response.raise_for_status()
                 token_data = response.json()
-                token_data["obtained_at"] = datetime.utcnow()
+                token_data["obtained_at"] = datetime.now(UTC)
                 return token_data
             except httpx.HTTPStatusError as e:
                 logger.error(f"Token refresh failed: {e.response.text}")

@@ -6,7 +6,7 @@ Tasks include vacancy processing, application generation, and submission to HH.r
 
 import asyncio
 import logging
-from datetime import datetime
+from datetime import UTC, datetime
 from typing import Any
 
 from redis import Redis
@@ -117,7 +117,7 @@ def process_single_application(
             "vacancy_id": vacancy_id,
             "status": "error",
             "error_detail": str(e),
-            "timestamp": datetime.utcnow().isoformat(),
+            "timestamp": datetime.now(UTC).isoformat(),
         }
 
 
@@ -150,7 +150,7 @@ def process_bulk_application(
             "total_applications": len(results),
             "successful_applications": success_count,
             "results": results,
-            "timestamp": datetime.utcnow().isoformat(),
+            "timestamp": datetime.now(UTC).isoformat(),
         }
 
     except Exception as e:
@@ -158,7 +158,7 @@ def process_bulk_application(
         return {
             "status": "error",
             "error_detail": str(e),
-            "timestamp": datetime.utcnow().isoformat(),
+            "timestamp": datetime.now(UTC).isoformat(),
         }
 
 
@@ -187,7 +187,7 @@ async def _apply_to_single_vacancy_async(
             "vacancy_title": result.vacancy_title,
             "cover_letter": result.cover_letter,
             "error_detail": result.error_detail,
-            "timestamp": datetime.utcnow().isoformat(),
+            "timestamp": datetime.now(UTC).isoformat(),
         }
 
 
@@ -229,7 +229,7 @@ def get_queue_status() -> dict[str, Any]:
         "pending_jobs": len(applybot_queue),
         "failed_jobs": len(applybot_queue.failed_job_registry),
         "workers": len(Worker.all(connection=redis_conn)),
-        "timestamp": datetime.utcnow().isoformat(),
+        "timestamp": datetime.now(UTC).isoformat(),
     }
 
 

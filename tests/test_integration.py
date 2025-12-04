@@ -1,6 +1,6 @@
 """Integration tests for API endpoints with mocked external services."""
 
-from datetime import datetime
+from datetime import UTC, datetime
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
@@ -19,7 +19,7 @@ class TestApplyEndpointsIntegration:
         mock_token.access_token = "valid_token"
         mock_token.refresh_token = "refresh_token"
         mock_token.expires_in = 3600
-        mock_token.obtained_at = datetime.utcnow()
+        mock_token.obtained_at = datetime.now(UTC)
         mock_token.is_expired.return_value = False
 
         with patch("app.core.config.settings") as mock_settings:

@@ -27,10 +27,17 @@ class ClaudeProvider(LLMProvider):
                 max_tokens=600,
                 temperature=0.2,
             )
-            return response.content[0].text.strip()
+            if not response.content:
+                raise ValueError("Empty response from LLM")
+            first_block = response.content[0]
+            if first_block.type != "text":
+                raise ValueError(f"Unexpected response type: {first_block.type}")
+            return first_block.text.strip()
+        except ValueError:
+            raise
         except Exception as e:
             logger.error(f"Error generating content: {e}")
-            raise Exception(f"Failed to generate content: {e!s}")
+            raise ValueError(f"Failed to generate content: {e!s}") from e
 
     async def generate_cover_letter(
         self, vacancy: dict[str, Any], user_profile: dict[str, Any]

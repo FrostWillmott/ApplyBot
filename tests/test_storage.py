@@ -1,6 +1,6 @@
 """Tests for storage module."""
 
-from datetime import datetime, timedelta
+from datetime import UTC, datetime, timedelta
 
 
 class TestTokenModel:
@@ -15,7 +15,7 @@ class TestTokenModel:
             access_token="test_access",
             refresh_token="test_refresh",
             expires_in=3600,  # 1 hour
-            obtained_at=datetime.utcnow(),
+            obtained_at=datetime.now(UTC),
         )
 
         # Should not be expired yet
@@ -30,7 +30,7 @@ class TestTokenModel:
             access_token="test_access",
             refresh_token="test_refresh",
             expires_in=3600,
-            obtained_at=datetime.utcnow() - timedelta(hours=2),
+            obtained_at=datetime.now(UTC) - timedelta(hours=2),
         )
 
         assert token.is_expired() is True
@@ -44,7 +44,7 @@ class TestTokenModel:
             access_token="test_access",
             refresh_token="test_refresh",
             expires_in=120,  # 2 minutes
-            obtained_at=datetime.utcnow(),
+            obtained_at=datetime.now(UTC),
         )
 
         # Depending on buffer, might be expired

@@ -9,16 +9,10 @@ services:
       - db
       - redis
     environment:
-      - DATABASE_URL=postgresql+asyncpg://postgres:postgres@db:5432/applybot
-      - REDIS_URL=redis://redis:6379/0
-      - LOG_LEVEL=DEBUG
-      - SCHEDULER_ENABLED=true
-      - SCHEDULER_AUTO_START=true
-      - SCHEDULER_DEFAULT_HOUR=9
-      - SCHEDULER_DEFAULT_MINUTE=0
-      - SCHEDULER_DEFAULT_DAYS=mon,tue,wed,thu,fri
-      - SCHEDULER_DEFAULT_TIMEZONE=Europe/Moscow
-      - SCHEDULER_MAX_APPLICATIONS=20
+      - DATABASE_URL=postgresql+asyncpg://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD}@db:5432/${POSTGRES_DB:-applybot}
+      - REDIS_URL=${REDIS_URL:-redis://redis:6379/0}
+      - LOG_LEVEL=${LOG_LEVEL:-INFO}
+      - SCHEDULER_ENABLED=${SCHEDULER_ENABLED:-true}
     env_file:
       - .env
     volumes:
@@ -37,8 +31,8 @@ services:
       - db
       - redis
     environment:
-      - DATABASE_URL=postgresql+asyncpg://postgres:postgres@db:5432/applybot
-      - REDIS_URL=redis://redis:6379/0
+      - DATABASE_URL=postgresql+asyncpg://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD}@db:5432/${POSTGRES_DB:-applybot}
+      - REDIS_URL=${REDIS_URL:-redis://redis:6379/0}
     env_file:
       - .env
     volumes:
@@ -60,10 +54,10 @@ services:
   db:
     image: postgres:15
     environment:
-      - POSTGRES_DB=applybot
-      - POSTGRES_USER=postgres
-      - POSTGRES_PASSWORD=postgres
-      - POSTGRES_HOST_AUTH_METHOD=trust
+      - POSTGRES_DB=${POSTGRES_DB:-applybot}
+      - POSTGRES_USER=${POSTGRES_USER:-postgres}
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in .env}
+      - POSTGRES_HOST_AUTH_METHOD=scram-sha-256
     volumes:
       - db-data:/var/lib/postgresql/data
     ports:
@@ -82,4 +76,5 @@ services:
 volumes:
   db-data:
   redis-data:
+
 

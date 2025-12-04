@@ -3,7 +3,9 @@
 import asyncio
 import logging
 from collections.abc import Callable
-from datetime import datetime
+from datetime import UTC, datetime
+
+from sqlalchemy import select
 
 from app.core.storage import async_session
 from app.models.application import ApplicationHistory
@@ -326,11 +328,6 @@ class ApplicationService:
     async def _has_already_applied(self, vacancy_id: str, resume_id: str) -> bool:
         """Check if we've already applied to this vacancy."""
         async with async_session() as session:
-            from sqlalchemy import select
-
-            from app.models.application import ApplicationHistory
-
-            # Query the application history
             query = select(ApplicationHistory).where(
                 ApplicationHistory.vacancy_id == vacancy_id,
                 ApplicationHistory.resume_id == resume_id,
@@ -354,7 +351,7 @@ class ApplicationService:
                 vacancy_id=vacancy_id,
                 resume_id=request.resume_id,
                 user_id=user_id,
-                applied_at=datetime.utcnow(),
+                applied_at=datetime.now(UTC),
                 hh_response=response,
             )
             session.add(application)
