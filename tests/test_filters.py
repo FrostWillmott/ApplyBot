@@ -75,7 +75,7 @@ class TestApplicationFilter:
         sample_vacancy["key_skills"] = []
         sample_vacancy["description"] = "We need a Python and Django developer"
         filter_engine = ApplicationFilter(sample_bulk_apply_request)
-        should_apply, reason = filter_engine.should_apply(sample_vacancy)
+        should_apply, _reason = filter_engine.should_apply(sample_vacancy)
         assert should_apply is True
 
     def test_should_apply_finds_skills_in_name(
@@ -86,7 +86,7 @@ class TestApplicationFilter:
         sample_vacancy["description"] = ""
         sample_vacancy["name"] = "Python Django Developer"
         filter_engine = ApplicationFilter(sample_bulk_apply_request)
-        should_apply, reason = filter_engine.should_apply(sample_vacancy)
+        should_apply, _reason = filter_engine.should_apply(sample_vacancy)
         assert should_apply is True
 
     def test_should_apply_filters_excluded_keywords(
@@ -152,7 +152,7 @@ class TestApplicationFilter:
             "key_skills": [{"name": "Python"}, {"name": "Django"}],
         }
         filter_engine = ApplicationFilter(sample_bulk_apply_request)
-        should_apply, reason = filter_engine.should_apply(vacancy)
+        should_apply, _reason = filter_engine.should_apply(vacancy)
         assert should_apply is True
 
     def test_should_apply_handles_empty_key_skills(
@@ -162,5 +162,5 @@ class TestApplicationFilter:
         sample_vacancy["key_skills"] = []
         sample_vacancy["description"] = "Python and Django developer needed"
         filter_engine = ApplicationFilter(sample_bulk_apply_request)
-        should_apply, reason = filter_engine.should_apply(sample_vacancy)
+        should_apply, _reason = filter_engine.should_apply(sample_vacancy)
         assert should_apply is True
