@@ -98,3 +98,4 @@ cython_debug/
 # Cursor AI
 .cursor/rules/snyk_rules.mdc
 ./venvArchive.zip
+Archive.zip

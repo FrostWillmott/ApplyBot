@@ -2,7 +2,7 @@
 
 import asyncio
 import logging
-from datetime import datetime
+from datetime import UTC, datetime
 from typing import Any
 from zoneinfo import ZoneInfo
 
@@ -26,9 +26,8 @@ logger = logging.getLogger(__name__)
 
 
 def _now() -> datetime:
-    """Get current time in configured timezone."""
-    tz = ZoneInfo(settings.scheduler_default_timezone)
-    return datetime.now(tz).replace(tzinfo=None)
+    """Get current time as UTC naive datetime for DB storage."""
+    return datetime.now(UTC).replace(tzinfo=None)
 
 
 class SchedulerService:
@@ -137,7 +136,9 @@ class SchedulerService:
             misfire_grace_time=3600,
         )
 
-        next_run = trigger.get_next_fire_time(None, datetime.now())
+        # Get next run time from the scheduled job for accurate logging
+        job = self._scheduler.get_job(job_id)
+        next_run = job.next_run_time if job else None
         logger.info(
             f"Scheduled auto-apply for user {user_settings.user_id} "
             f"at {user_settings.schedule_hour}:{user_settings.schedule_minute:02d} "
@@ -329,12 +330,19 @@ class SchedulerService:
             if not user_settings:
                 return None
 
-            # Calculate next run time
+            # Calculate next run time from CronTrigger for accuracy
             next_run_at = None
             if self._scheduler and user_settings.enabled:
                 job = self._scheduler.get_job(f"auto_apply_{user_id}")
-                if job:
-                    next_run_at = job.next_run_time
+                if job and job.next_run_time:
+                    # APScheduler returns timezone-aware datetime
+                    # Convert to user's timezone for display
+                    user_tz = ZoneInfo(user_settings.timezone)
+                    next_run_at = job.next_run_time.astimezone(user_tz)
+                    logger.debug(
+                        f"Next run for {user_id}: {next_run_at} "
+                        f"(raw: {job.next_run_time})"
+                    )
 
             search_criteria = None
             if user_settings.search_criteria:
@@ -481,7 +489,11 @@ class SchedulerService:
         if jobs:
             next_runs = [j.next_run_time for j in jobs if j.next_run_time]
             if next_runs:
+                # APScheduler returns timezone-aware datetimes
                 next_run = min(next_runs)
+                # Convert to default timezone for consistent display
+                default_tz = ZoneInfo(settings.scheduler_default_timezone)
+                next_run = next_run.astimezone(default_tz)
 
         return {
             "scheduler_running": self._scheduler.running,
