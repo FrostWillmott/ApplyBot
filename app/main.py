@@ -12,7 +12,9 @@ from fastapi.staticfiles import StaticFiles
 from app.core.config import settings
 from app.core.storage import TokenStorage
 from app.routers import apply_router, auth_router, hh_apply
+from app.routers.auto_reply import router as auto_reply_router
 from app.routers.scheduler import router as scheduler_router
+from app.services.auto_reply_service import auto_reply_service
 from app.services.scheduler_service import scheduler_service
 
 log_level = os.getenv("LOG_LEVEL", "INFO").upper()
@@ -35,12 +37,17 @@ async def lifespan(app: FastAPI):
         await scheduler_service.start()
         logger.info("Scheduler started")
 
+        logger.info("Starting auto-reply scheduler...")
+        await auto_reply_service.start()
+        logger.info("Auto-reply scheduler started")
+
     logger.info("Application initialized")
 
     yield
 
     logger.info("Shutting down...")
     await scheduler_service.stop()
+    await auto_reply_service.stop()
     logger.info("Shutdown complete")
 
 
@@ -63,6 +70,7 @@ app.include_router(auth_router)
 app.include_router(apply_router)
 app.include_router(hh_apply.router)
 app.include_router(scheduler_router)
+app.include_router(auto_reply_router)
 
 app.mount("/static", StaticFiles(directory="app/static"), name="static")
 
@@ -92,4 +100,5 @@ async def health_check():
         "status": "healthy",
         "service": "applybot",
         "scheduler": scheduler_service.get_status(),
+        "auto_reply": auto_reply_service.get_status(),
     }

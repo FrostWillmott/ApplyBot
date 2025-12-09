@@ -706,6 +706,130 @@ class HHClient:
             logger.error(f"Failed to fetch applied vacancies: {e}")
             return set()
 
+    # ==================== Chat/Negotiations Methods ====================
+
+    async def get_negotiations_with_unread(self) -> list[dict]:
+        """Get negotiations (chats) that have unread messages from employers.
+
+        Returns:
+            List of negotiations with has_updates=True
+        """
+        try:
+            response = await self._make_request(
+                "GET",
+                "/negotiations",
+                params={"page": 0, "per_page": 50},
+            )
+
+            negotiations = []
+            for item in response.get("items", []):
+                # Check if there are updates (unread messages)
+                if item.get("has_updates", False):
+                    negotiations.append(item)
+
+            logger.info(f"Found {len(negotiations)} negotiations with unread messages")
+            return negotiations
+
+        except HHAPIError as e:
+            logger.error(f"Failed to fetch negotiations: {e}")
+            return []
+
+    async def get_negotiation_messages(self, negotiation_id: str) -> list[dict]:
+        """Get messages from a specific negotiation (chat).
+
+        Args:
+            negotiation_id: The negotiation ID
+
+        Returns:
+            List of messages in the negotiation
+        """
+        try:
+            response = await self._make_request(
+                "GET",
+                f"/negotiations/{negotiation_id}/messages",
+            )
+            return response.get("items", [])
+
+        except HHAPIError as e:
+            if e.status_code == 404:
+                logger.warning(f"Negotiation {negotiation_id} not found")
+                return []
+            logger.error(
+                f"Failed to fetch messages for negotiation {negotiation_id}: {e}"
+            )
+            return []
+
+    async def send_negotiation_message(
+        self, negotiation_id: str, message: str
+    ) -> dict | None:
+        """Send a message in a negotiation (chat).
+
+        Args:
+            negotiation_id: The negotiation ID
+            message: The message text to send
+
+        Returns:
+            Response from the API or None if failed
+        """
+        try:
+            response = await self._make_request(
+                "POST",
+                f"/negotiations/{negotiation_id}/messages",
+                data={"message": message},
+            )
+            logger.info(f"Message sent to negotiation {negotiation_id}")
+            return response
+
+        except HHAPIError as e:
+            logger.error(f"Failed to send message to negotiation {negotiation_id}: {e}")
+            return None
+
+    async def get_negotiation_details(self, negotiation_id: str) -> dict | None:
+        """Get details of a specific negotiation.
+
+        Args:
+            negotiation_id: The negotiation ID
+
+        Returns:
+            Negotiation details or None if not found
+        """
+        try:
+            response = await self._make_request(
+                "GET",
+                f"/negotiations/{negotiation_id}",
+            )
+            return response
+
+        except HHAPIError as e:
+            if e.status_code == 404:
+                return None
+            logger.error(f"Failed to fetch negotiation {negotiation_id}: {e}")
+            return None
+
+    async def mark_negotiation_read(self, negotiation_id: str) -> bool:
+        """Mark a negotiation as read.
+
+        Args:
+            negotiation_id: The negotiation ID
+
+        Returns:
+            True if successful, False otherwise
+        """
+        try:
+            await self._make_request(
+                "PUT",
+                f"/negotiations/{negotiation_id}",
+                data={"viewed": True},
+            )
+            logger.debug(f"Marked negotiation {negotiation_id} as read")
+            return True
+
+        except HHAPIError as e:
+            logger.error(f"Failed to mark negotiation {negotiation_id} as read: {e}")
+            return False
+
+    # ==================== End Chat/Negotiations Methods ====================
+
     async def get_access_token(self, code: str) -> dict:
         """Exchange authorization code for access token."""
         data = {
