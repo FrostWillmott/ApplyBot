@@ -10,10 +10,13 @@ import pytest
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 # Set test environment variables before importing app modules
+# Use direct assignment for LLM settings to override any .env values
 os.environ.setdefault("HH_CLIENT_ID", "test_client_id")
 os.environ.setdefault("HH_CLIENT_SECRET", "test_client_secret")
 os.environ.setdefault("HH_REDIRECT_URI", "http://localhost:8000/auth/callback")
-os.environ.setdefault("ANTHROPIC_API_KEY", "test_anthropic_key")
+os.environ["OLLAMA_BASE_URL"] = "http://localhost:11434"
+os.environ["OLLAMA_MODEL"] = "qwen3:14b"
+os.environ["LLM_PROVIDER"] = "ollama"
 os.environ.setdefault("DATABASE_URL", "sqlite+aiosqlite:///./test.db")
 os.environ.setdefault("SCHEDULER_ENABLED", "false")
 

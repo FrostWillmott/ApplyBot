@@ -18,7 +18,8 @@ class TestAPIEndpoints:
             mock_settings.hh_client_id = "test"
             mock_settings.hh_client_secret = "test"
             mock_settings.hh_redirect_uri = "http://test"
-            mock_settings.anthropic_api_key = "test"
+            mock_settings.ollama_base_url = "http://localhost:11434"
+            mock_settings.ollama_model = "qwen3:14b"
             mock_settings.database_url = "sqlite+aiosqlite:///./test.db"
 
             # Mock TokenStorage
@@ -88,7 +89,8 @@ class TestAuthEndpoints:
             mock_settings.hh_client_id = "test_client_id"
             mock_settings.hh_client_secret = "test_secret"
             mock_settings.hh_redirect_uri = "http://localhost:8000/auth/callback"
-            mock_settings.anthropic_api_key = "test"
+            mock_settings.ollama_base_url = "http://localhost:11434"
+            mock_settings.ollama_model = "qwen3:14b"
             mock_settings.database_url = "sqlite+aiosqlite:///./test.db"
             mock_settings.cookie_secure = False
 
@@ -133,7 +135,8 @@ class TestSchedulerEndpoints:
             mock_settings.hh_client_id = "test"
             mock_settings.hh_client_secret = "test"
             mock_settings.hh_redirect_uri = "http://test"
-            mock_settings.anthropic_api_key = "test"
+            mock_settings.ollama_base_url = "http://localhost:11434"
+            mock_settings.ollama_model = "qwen3:14b"
             mock_settings.database_url = "sqlite+aiosqlite:///./test.db"
 
             with patch("app.core.storage.TokenStorage") as mock_storage:
@@ -178,7 +181,8 @@ class TestCORSConfiguration:
             mock_settings.hh_client_id = "test"
             mock_settings.hh_client_secret = "test"
             mock_settings.hh_redirect_uri = "http://test"
-            mock_settings.anthropic_api_key = "test"
+            mock_settings.ollama_base_url = "http://localhost:11434"
+            mock_settings.ollama_model = "qwen3:14b"
             mock_settings.database_url = "sqlite+aiosqlite:///./test.db"
 
             with patch("app.core.storage.TokenStorage") as mock_storage:

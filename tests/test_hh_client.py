@@ -4,7 +4,7 @@ from unittest.mock import AsyncMock, patch
 
 import pytest
 
-from app.services.hh_client import DEFAULT_HEADERS, HHAPIError, HHClient
+from app.services.hh_client import HHAPIError, HHClient
 
 
 class TestHHAPIError:
@@ -55,30 +55,6 @@ class TestHHClient:
         client = HHClient()
         await client.close()
         # Should not raise any errors
-
-
-class TestDefaultHeaders:
-    """Tests for DEFAULT_HEADERS constant."""
-
-    def test_headers_contain_user_agent(self):
-        """Test that headers contain User-Agent."""
-        assert "User-Agent" in DEFAULT_HEADERS
-        assert "Mozilla" in DEFAULT_HEADERS["User-Agent"]
-
-    def test_headers_contain_accept(self):
-        """Test that headers contain Accept."""
-        assert "Accept" in DEFAULT_HEADERS
-        assert "application/json" in DEFAULT_HEADERS["Accept"]
-
-    def test_headers_contain_origin(self):
-        """Test that headers contain Origin."""
-        assert "Origin" in DEFAULT_HEADERS
-        assert "hh.ru" in DEFAULT_HEADERS["Origin"]
-
-    def test_headers_contain_referer(self):
-        """Test that headers contain Referer."""
-        assert "Referer" in DEFAULT_HEADERS
-        assert "hh.ru" in DEFAULT_HEADERS["Referer"]
 
 
 class TestHHClientMethods:

@@ -1,6 +1,9 @@
 """API routes for job applications."""
 
+import json
+
 from fastapi import APIRouter, Depends, HTTPException, Query
+from sse_starlette.sse import EventSourceResponse
 
 from app.schemas.apply import ApplyRequest, ApplyResponse, BulkApplyRequest
 from app.services.application_service import (
@@ -66,6 +69,31 @@ async def bulk_apply(
         raise
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Bulk application failed: {e!s}")
+
+
+@router.post("/bulk/stream")
+async def bulk_apply_stream(
+    request: BulkApplyRequest,
+    service: ApplicationService = Depends(get_application_service),
+    max_applications: int = Query(
+        default=20, le=50, description="Maximum applications"
+    ),
+):
+    """Stream bulk application progress via Server-Sent Events."""
+    validation = validate_bulk_application_limits(max_applications)
+    if not validation.is_valid:
+        raise HTTPException(status_code=400, detail=validation.error)
+
+    async def event_generator():
+        async for progress in service.bulk_apply_stream(
+            request=request, max_applications=max_applications
+        ):
+            yield {
+                "event": progress.event,
+                "data": json.dumps(progress.model_dump(), ensure_ascii=False),
+            }
+
+    return EventSourceResponse(event_generator())
 
 
 @router.get("/search")

@@ -12,20 +12,52 @@ from app.core.storage import TokenStorage
 
 logger = logging.getLogger(__name__)
 
-DEFAULT_HEADERS = {
-    "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
-    "Accept": "application/json",
-    "Accept-Language": "ru-RU,ru;q=0.9,en;q=0.8",
-    "Accept-Encoding": "gzip, deflate, br",
-    "DNT": "1",
-    "Connection": "keep-alive",
-    "Sec-Fetch-Dest": "empty",
-    "Sec-Fetch-Mode": "cors",
-    "Sec-Fetch-Site": "cross-site",
-    "Upgrade-Insecure-Requests": "1",
-    "Referer": "https://hh.ru/",
-    "Origin": "https://hh.ru",
-}
+# Rotating User-Agents to avoid detection
+USER_AGENTS = [
+    "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+    "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/119.0.0.0 Safari/537.36",
+    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/119.0.0.0 Safari/537.36",
+    "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+]
+
+# Rotating Referers
+REFERERS = [
+    "https://hh.ru/",
+    "https://hh.ru/vacancies",
+    "https://hh.ru/search/vacancy",
+    "https://hh.ru/vacancies/python",
+    "https://hh.ru/account/login",
+]
+
+
+def get_random_headers() -> dict[str, str]:
+    """Generate realistic browser headers with rotation."""
+    user_agent = random.choice(USER_AGENTS)
+    referer = random.choice(REFERERS)
+
+    # Extract Chrome version from User-Agent for consistency
+    chrome_version = "120" if "120" in user_agent else "119"
+
+    return {
+        "User-Agent": user_agent,
+        "Accept": "application/json, text/plain, */*",
+        "Accept-Language": "ru-RU,ru;q=0.9,en-US;q=0.8,en;q=0.7",
+        "Accept-Encoding": "gzip, deflate, br",
+        "DNT": "1",
+        "Connection": "keep-alive",
+        "Sec-Fetch-Dest": "empty",
+        "Sec-Fetch-Mode": "cors",
+        "Sec-Fetch-Site": "same-site",
+        "Sec-Ch-Ua": f'"Not_A Brand";v="8", "Chromium";v="{chrome_version}", "Google Chrome";v="{chrome_version}"',
+        "Sec-Ch-Ua-Mobile": "?0",
+        "Sec-Ch-Ua-Platform": '"macOS"' if "Macintosh" in user_agent else '"Windows"',
+        "Upgrade-Insecure-Requests": "1",
+        "Referer": referer,
+        "Origin": "https://hh.ru",
+        "Cache-Control": "no-cache",
+        "Pragma": "no-cache",
+    }
 
 
 class HHAPIError(Exception):
@@ -48,16 +80,54 @@ class HHClient:
 
     MAX_REQUESTS_PER_MINUTE = 1000
     REQUEST_DELAY = 0.1
+    POST_REQUEST_DELAY = 2.0  # Reduced delay for speed
 
     def __init__(self):
         self.client = httpx.AsyncClient(
             base_url=self.API_BASE,
             timeout=httpx.Timeout(30.0),
             limits=httpx.Limits(max_connections=10, max_keepalive_connections=5),
+            cookies=httpx.Cookies(),  # Enable cookie persistence for DDoS-guard
+            follow_redirects=True,
         )
         self._token = None
         self._token_expires_at = None
         self._last_request_time = None
+        self._last_post_time = None  # Track POST requests separately
+        self._cookies_initialized = (
+            False  # Track if we've initialized cookies from hh.ru
+        )
+        self._user_agent = random.choice(USER_AGENTS)  # Select one UA for the session
+
+    def _get_headers(self) -> dict[str, str]:
+        """Generate realistic browser headers with consistent UA."""
+        referer = random.choice(REFERERS)
+
+        # Extract Chrome version from User-Agent for consistency
+        chrome_version = "120" if "120" in self._user_agent else "119"
+
+        return {
+            "User-Agent": self._user_agent,
+            "HH-User-Agent": "ApplyBot/1.0 (i.tkachenko@zohomail.eu)",
+            "Accept": "application/json, text/plain, */*",
+            "Accept-Language": "ru-RU,ru;q=0.9,en-US;q=0.8,en;q=0.7",
+            "Accept-Encoding": "gzip, deflate, br",
+            "DNT": "1",
+            "Connection": "keep-alive",
+            "Sec-Fetch-Dest": "empty",
+            "Sec-Fetch-Mode": "cors",
+            "Sec-Fetch-Site": "same-site",
+            "Sec-Ch-Ua": f'"Not_A Brand";v="8", "Chromium";v="{chrome_version}", "Google Chrome";v="{chrome_version}"',
+            "Sec-Ch-Ua-Mobile": "?0",
+            "Sec-Ch-Ua-Platform": '"macOS"'
+            if "Macintosh" in self._user_agent
+            else '"Windows"',
+            "Upgrade-Insecure-Requests": "1",
+            "Referer": referer,
+            "Origin": "https://hh.ru",
+            "Cache-Control": "no-cache",
+            "Pragma": "no-cache",
+        }
 
     async def __aenter__(self):
         return self
@@ -65,13 +135,78 @@ class HHClient:
     async def __aexit__(self, exc_type, exc_val, exc_tb):
         await self.close()
 
-    async def _rate_limit(self):
-        """Basic rate limiting."""
+    async def _rate_limit(self, method: str = "GET"):
+        """Rate limiting with special handling for POST requests."""
+        current_time = asyncio.get_event_loop().time()
+
+        # For POST requests, enforce longer delay
+        if method == "POST" and self._last_post_time:
+            elapsed = current_time - self._last_post_time
+            if elapsed < self.POST_REQUEST_DELAY:
+                delay = self.POST_REQUEST_DELAY - elapsed
+                logger.info(f"Rate limiting POST request: waiting {delay:.2f}s")
+                await asyncio.sleep(delay)
+
+        # General rate limiting for all requests
         if self._last_request_time:
-            elapsed = asyncio.get_event_loop().time() - self._last_request_time
+            elapsed = current_time - self._last_request_time
             if elapsed < self.REQUEST_DELAY:
                 await asyncio.sleep(self.REQUEST_DELAY - elapsed)
+
         self._last_request_time = asyncio.get_event_loop().time()
+        if method == "POST":
+            self._last_post_time = self._last_request_time
+
+    async def _initialize_cookies(self):
+        """Initialize cookies by visiting hh.ru main page to get DDoS-guard cookies."""
+        if self._cookies_initialized:
+            return
+
+        try:
+            # Create a temporary client to visit hh.ru main page
+            temp_client = httpx.AsyncClient(
+                timeout=httpx.Timeout(30.0),
+                follow_redirects=True,
+                cookies=httpx.Cookies(),
+            )
+
+            headers = self._get_headers()
+            headers.update(
+                {
+                    "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8",
+                    "Sec-Fetch-Dest": "document",
+                    "Sec-Fetch-Mode": "navigate",
+                    "Sec-Fetch-Site": "none",
+                    "Sec-Fetch-User": "?1",
+                }
+            )
+
+            logger.info("Initializing cookies from hh.ru main page...")
+            await temp_client.get("https://hh.ru/", headers=headers)
+
+            # Copy cookies from temp client to main client
+            # httpx.Cookies iteration returns cookie names, so we use .jar to get actual Cookie objects
+            for cookie in temp_client.cookies.jar:
+                self.client.cookies.set(
+                    name=cookie.name,
+                    value=cookie.value,
+                    domain=cookie.domain,
+                    path=cookie.path,
+                )
+
+            await temp_client.aclose()
+            self._cookies_initialized = True
+            logger.info(
+                f"Cookies initialized. Total cookies: {len(self.client.cookies)}"
+            )
+
+            # Wait a bit after getting cookies to mimic human behavior
+            await asyncio.sleep(random.uniform(2.0, 5.0))
+
+        except Exception as e:
+            logger.warning(
+                f"Failed to initialize cookies from hh.ru: {e}. Continuing without pre-initialized cookies."
+            )
 
     async def _ensure_token(self):
         """Ensure we have a valid access token."""
@@ -105,12 +240,22 @@ class HHClient:
         **kwargs,
     ) -> dict:
         """Make HTTP request with retry logic."""
-        kwargs.setdefault("headers", {}).update(DEFAULT_HEADERS)
+        # Initialize cookies on first request
+        await self._initialize_cookies()
 
-        await asyncio.sleep(random.uniform(0.5, 2.0))
+        # Use consistent headers for each request
+        default_headers = self._get_headers()
+        request_headers = kwargs.get("headers", {})
+        # Merge: request-specific headers override defaults
+        merged_headers = {**default_headers, **request_headers}
+        kwargs["headers"] = merged_headers
+
+        # Add random jitter before request to mimic human behavior
+        jitter = random.uniform(0.5, 1.5)
+        await asyncio.sleep(jitter)
 
         await self._ensure_token()
-        await self._rate_limit()
+        await self._rate_limit(method)
 
         retries = 0
         while True:
@@ -120,16 +265,34 @@ class HHClient:
                 response_text = (
                     response.text.lower() if hasattr(response, "text") else ""
                 )
-                if (
-                    "ddos-guard" in response_text
-                    or "checking your browser" in response_text
-                    or response.status_code == 403
-                ):
+                # Check for DDoS protection in response
+                content_type = response.headers.get("content-type", "").lower()
+                is_json = "application/json" in content_type
+
+                is_ddos_protected = False
+                if not is_json:
+                    is_ddos_protected = (
+                        "ddos-guard" in response_text
+                        or "checking your browser" in response_text
+                        or (
+                            response.status_code == 403
+                            and "ddos-guard"
+                            in response.headers.get("server", "").lower()
+                        )
+                    )
+
+                if is_ddos_protected:
+                    # Log response text for debugging
+                    logger.warning(
+                        f"DDoS protection response text snippet: {response.text[:1000]}"
+                    )
+
+                if is_ddos_protected:
                     retries += 1
                     if retries > max_retries:
                         logger.error(
                             f"Request blocked by DDoS protection after {max_retries} retries. "
-                            f"Endpoint: {endpoint}, Status: {response.status_code}"
+                            f"Endpoint: {endpoint}, Status: {response.status_code}, Method: {method}"
                         )
                         raise HHAPIError(
                             429,
@@ -140,10 +303,13 @@ class HHClient:
                             },
                         )
 
-                    # Wait longer for DDoS protection
-                    delay = base_delay * (2**retries) + random.uniform(2, 5)
+                    # Exponential backoff with much longer delays for DDoS protection
+                    # Base delay increases exponentially: 30s, 90s, 270s
+                    delay = 30 * (3**retries) + random.uniform(10, 20)
                     logger.warning(
-                        f"DDoS protection detected. Retry {retries}/{max_retries} after {delay:.2f}s"
+                        f"DDoS protection detected on {method} {endpoint}. "
+                        f"Retry {retries}/{max_retries} after {delay:.2f}s. "
+                        f"Cookies: {len(self.client.cookies)} stored"
                     )
                     await asyncio.sleep(delay)
                     continue
@@ -358,6 +524,56 @@ class HHClient:
                 raise HTTPException(404, f"Resume {resume_id} not found")
             raise HTTPException(e.status_code, f"Failed to fetch resume: {e.message}")
 
+    async def _warm_up_vacancy_page(self, vacancy_id: str):
+        """Visit the vacancy page on hh.ru to mimic human behavior before applying.
+
+        This helps avoid DDoS protection by making our behavior look more like
+        a real user who would view a vacancy before applying.
+        """
+        try:
+            # Visit the HTML vacancy page first (like a browser would)
+            temp_client = httpx.AsyncClient(
+                timeout=httpx.Timeout(30.0),
+                follow_redirects=True,
+                cookies=self.client.cookies,  # Share cookies with main client
+            )
+
+            headers = self._get_headers()
+            headers.update(
+                {
+                    "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8",
+                    "Sec-Fetch-Dest": "document",
+                    "Sec-Fetch-Mode": "navigate",
+                    "Sec-Fetch-Site": "none",
+                    "Sec-Fetch-User": "?1",
+                    "Referer": "https://hh.ru/search/vacancy",
+                }
+            )
+
+            logger.info(f"Warming up: visiting vacancy page {vacancy_id}...")
+            await temp_client.get(
+                f"https://hh.ru/vacancy/{vacancy_id}", headers=headers
+            )
+
+            # Copy any new cookies back to main client
+            for cookie in temp_client.cookies.jar:
+                self.client.cookies.set(
+                    name=cookie.name,
+                    value=cookie.value,
+                    domain=cookie.domain,
+                    path=cookie.path,
+                )
+
+            await temp_client.aclose()
+
+            # Reading simulation removed for speed
+            pass
+
+            return True
+        except Exception as e:
+            logger.warning(f"Failed to warm up vacancy page {vacancy_id}: {e}")
+            return False
+
     async def apply(
         self,
         vacancy_id: str,
@@ -371,6 +587,9 @@ class HHClient:
                 raise ValueError("Cover letter must be at least 50 characters long")
 
         try:
+            # Warm up by visiting the vacancy page first (mimics real user behavior)
+            await self._warm_up_vacancy_page(vacancy_id)
+
             form_data = {
                 "vacancy_id": vacancy_id,
                 "resume_id": resume_id,
@@ -389,14 +608,11 @@ class HHClient:
                     f"Adding {len(answers)} screening question answers to application"
                 )
 
-            apply_headers = DEFAULT_HEADERS.copy()
-            apply_headers.update(
-                {
-                    "Content-Type": "application/x-www-form-urlencoded",
-                    "Referer": f"https://hh.ru/vacancy/{vacancy_id}",
-                    "Origin": "https://hh.ru",
-                }
-            )
+            # Use consistent headers but customize for POST application
+            apply_headers = self._get_headers()
+
+            # NOTE: Removed manual Origin/Referer/Sec-Fetch headers to behave like a proper API client.
+            # HH.ru API might flag requests that look like "fake browsers" mixed with API tokens.
 
             response = await self._make_request(
                 "POST", "/negotiations", data=form_data, headers=apply_headers
@@ -405,6 +621,16 @@ class HHClient:
             return response or {"status": "success"}
 
         except HHAPIError as e:
+            # Check for specific API errors
+            error_data = e.response_data or {}
+            errors = error_data.get("errors", [])
+            if any(err.get("value") == "test_required" for err in errors):
+                logger.info(f"Vacancy {vacancy_id} requires mandatory test. Skipping.")
+                raise HTTPException(
+                    status_code=403,
+                    detail="Vacancy requires mandatory test",
+                )
+
             error_messages = {
                 400: "Invalid application data or already applied to this vacancy",
                 403: "Access denied - you may not be eligible for this vacancy",

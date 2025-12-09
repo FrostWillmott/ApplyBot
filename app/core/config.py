@@ -14,9 +14,10 @@ class Settings(BaseSettings):
     hh_client_secret: str
     hh_redirect_uri: str
 
-    # LLM Configuration
-    llm_provider: Literal["sonnet4"] = "sonnet4"
-    anthropic_api_key: str
+    # LLM Configuration (Ollama)
+    llm_provider: Literal["ollama"] = "ollama"
+    ollama_base_url: str = "http://localhost:11434"
+    ollama_model: str = "qwen3:14b"
 
     # Database
     database_url: AnyUrl

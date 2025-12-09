@@ -1,6 +1,6 @@
 const API_BASE_URL = typeof CONFIG !== 'undefined' ? CONFIG.API_BASE_URL : '';
 const AUTH_ENDPOINTS = typeof CONFIG !== 'undefined' ? CONFIG.AUTH_ENDPOINTS : { login: '/auth/login', status: '/auth/status' };
-const APPLY_ENDPOINTS = typeof CONFIG !== 'undefined' ? CONFIG.APPLY_ENDPOINTS : { bulk: '/apply/bulk' };
+const APPLY_ENDPOINTS = typeof CONFIG !== 'undefined' ? CONFIG.APPLY_ENDPOINTS : { bulk: '/apply/bulk', bulkStream: '/apply/bulk/stream' };
 const HH_ENDPOINTS = typeof CONFIG !== 'undefined' ? CONFIG.HH_ENDPOINTS : { profile: '/hh/profile', resumes: '/hh/resumes' };
 const SCHEDULER_ENDPOINTS = typeof CONFIG !== 'undefined' ? CONFIG.SCHEDULER_ENDPOINTS : {
     status: '/scheduler/status',
@@ -30,10 +30,10 @@ function incrementDailyCount(count) {
     const current = getDailyCount();
     const newCount = current + count;
     localStorage.setItem(key, newCount.toString());
-    
+
     // Clean up old keys (older than 7 days)
     cleanupOldKeys();
-    
+
     return newCount;
 }
 
@@ -57,14 +57,14 @@ function playCompletionSound() {
         const audioContext = new (window.AudioContext || window.webkitAudioContext)();
         const oscillator = audioContext.createOscillator();
         const gainNode = audioContext.createGain();
-        
+
         oscillator.connect(gainNode);
         gainNode.connect(audioContext.destination);
-        
+
         oscillator.frequency.value = 800;
         oscillator.type = 'sine';
         gainNode.gain.value = 0.3;
-        
+
         oscillator.start();
         setTimeout(() => {
             oscillator.stop();
@@ -137,11 +137,11 @@ document.addEventListener('DOMContentLoaded', () => {
     const dailyCounter = document.getElementById('daily-counter');
 
     updateDailyCounterDisplay();
-    
+
     function updateDailyCounterDisplay() {
         const count = getDailyCount();
         dailyCountEl.textContent = count;
-        
+
         // Update color based on count
         if (count >= HH_DAILY_LIMIT) {
             dailyCountEl.style.color = '#f44336';
@@ -157,7 +157,7 @@ document.addEventListener('DOMContentLoaded', () => {
             dailyCounter.style.background = '#f5f5f5';
         }
     }
-    
+
     function isDailyLimitReached() {
         return getDailyCount() >= HH_DAILY_LIMIT;
     }
@@ -176,7 +176,7 @@ document.addEventListener('DOMContentLoaded', () => {
     function handleResumeSelect() {
         const selectedValue = resumeSelect.value;
         resumeId.value = selectedValue;
-        
+
         if (selectedValue) {
             loadUserProfileFromHH(selectedValue).then(profile => {
                 populateFormFields(profile);
@@ -197,7 +197,7 @@ document.addEventListener('DOMContentLoaded', () => {
             }
 
             const resumes = await response.json();
-            
+
             // Clear existing options
             resumeSelect.innerHTML = '';
 
@@ -228,7 +228,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 resumeSelect.value = resumes[0].id;
                 resumeId.value = resumes[0].id;
             }
-            
+
             return resumes;
         } catch (error) {
             resumeSelect.innerHTML = '<option value="">-- Error loading resumes --</option>';
@@ -249,7 +249,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 authStatus.classList.remove('hidden');
 
                 if (data.authenticated) {
-                    const userName = data.first_name 
+                    const userName = data.first_name
                         ? `${data.first_name} ${data.last_name || ''}`.trim()
                         : (data.email || 'User');
                     authStatusText.textContent = `Authenticated as ${userName}`;
@@ -286,7 +286,7 @@ document.addEventListener('DOMContentLoaded', () => {
         if (selectedResumeId) {
             url += `?resume_id=${encodeURIComponent(selectedResumeId)}`;
         }
-        
+
         const response = await fetch(url, {
             method: 'GET',
             headers: {
@@ -476,85 +476,86 @@ document.addEventListener('DOMContentLoaded', () => {
                 showNotification(`Ограничено до ${max} откликов (дневной лимит)`, 'warning');
             }
 
-            const timingConfig = typeof CONFIG !== 'undefined' ? CONFIG.TIMING : { WITH_COVER_LETTER: 15, WITHOUT_COVER_LETTER: 2 };
-            const timePerApp = useAiAssistant.checked ? timingConfig.WITH_COVER_LETTER : timingConfig.WITHOUT_COVER_LETTER;
-            const estimatedTime = max * timePerApp;
-            const estimatedMinutes = Math.ceil(estimatedTime / 60);
-
             applyBtn.textContent = 'Applying...';
             applyBtn.disabled = true;
 
             progressSection.classList.remove('hidden');
             progressBar.style.width = '0%';
-            progressText.textContent = `Starting bulk application (0/${max})...`;
-            progressEta.textContent = `Estimated time: ~${estimatedMinutes} min`;
+            progressText.textContent = 'Connecting...';
+            progressEta.textContent = '';
 
-            let progressInterval = null;
-            let currentProgress = 0;
-            progressInterval = setInterval(() => {
-                if (currentProgress < 95) {
-                    currentProgress += (100 / max) * 0.5; // Slow progress simulation
-                    progressBar.style.width = Math.min(currentProgress, 95) + '%';
-                    const estimated = Math.floor(currentProgress / (100 / max));
-                    progressText.textContent = `Processing applications (~${estimated}/${max})...`;
-                }
-            }, timePerApp * 500);
+            // Clear previous results
+            applyResultsList.innerHTML = '';
+            applyResults.classList.add('hidden');
 
-            const url = `${API_BASE_URL}${APPLY_ENDPOINTS.bulk}?max_applications=${max}`;
+            const results = [];
+            const url = `${API_BASE_URL}${APPLY_ENDPOINTS.bulkStream}?max_applications=${max}`;
 
-            const controller = new AbortController();
-            const timeoutId = setTimeout(() => controller.abort(), 600000);
+            // Use fetch with POST for SSE (EventSource only supports GET)
+            const response = await fetch(url, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'Accept': 'text/event-stream'
+                },
+                body: JSON.stringify(requestData)
+            });
 
-            try {
-                const response = await fetch(url, {
-                    method: 'POST',
-                    headers: {
-                        'Content-Type': 'application/json'
-                    },
-                    body: JSON.stringify(requestData),
-                    signal: controller.signal
-                });
+            if (!response.ok) {
+                const errorData = await response.json();
+                throw new Error(errorData.detail || `Bulk application failed: ${response.status}`);
+            }
 
-                clearTimeout(timeoutId);
-                clearInterval(progressInterval);
+            const reader = response.body.getReader();
+            const decoder = new TextDecoder();
+            let buffer = '';
 
-                if (!response.ok) {
-                    const errorData = await response.json();
-                    throw new Error(errorData.detail || `Bulk application failed: ${response.status}`);
-                }
+            while (true) {
+                const { done, value } = await reader.read();
+                if (done) break;
 
-                const data = await response.json();
+                buffer += decoder.decode(value, { stream: true });
+                const lines = buffer.split('\n');
+                buffer = lines.pop() || '';
 
-                progressBar.style.width = '100%';
-                const results = Array.isArray(data) ? data : [];
-                const successCount = parseInt(results.filter(r => r && r.status === 'success').length, 10) || 0;
-                const totalCount = parseInt(results.length, 10) || 0;
-                progressText.textContent = `Completed! ${successCount}/${totalCount} applications sent successfully.`;
-                progressEta.textContent = '';
-
-                if (successCount > 0) {
-                    incrementDailyCount(successCount);
-                    updateDailyCounterDisplay();
-                }
-
-                displayApplyResults(results);
-                showNotification(`Successfully sent ${successCount} applications!`, 'success');
-                showCompletionAlert(successCount, totalCount);
-
-            } catch (fetchError) {
-                clearInterval(progressInterval);
-                if (fetchError.name === 'AbortError') {
-                    progressText.textContent = 'Request timed out. Applications may still be processing on the server.';
-                    progressEta.textContent = 'Check your HH.ru account for results.';
-                    showNotification('Request timed out but applications may have been sent. Check HH.ru.', 'warning');
-                } else {
-                    throw fetchError;
+                for (const line of lines) {
+                    if (line.startsWith('data: ')) {
+                        try {
+                            const data = JSON.parse(line.slice(6));
+                            handleProgressEvent(data, results, max);
+                        } catch (e) {
+                            // Ignore parse errors for incomplete data
+                        }
+                    }
                 }
             }
+
+            // Process any remaining buffer
+            if (buffer.startsWith('data: ')) {
+                try {
+                    const data = JSON.parse(buffer.slice(6));
+                    handleProgressEvent(data, results, max);
+                } catch (e) {
+                    // Ignore
+                }
+            }
+
+            // Final completion
+            const successCount = results.filter(r => r && r.status === 'success').length;
+            const totalCount = results.length;
+
+            progressBar.style.width = '100%';
+            progressText.textContent = `Completed! ${successCount}/${totalCount} applications sent successfully.`;
+            progressEta.textContent = '';
+
+            displayApplyResults(results);
+            showNotification(`Successfully sent ${successCount} applications!`, 'success');
+            showCompletionAlert(successCount, totalCount);
 
         } catch (error) {
             progressSection.classList.add('hidden');
             showNotification('Bulk application failed. Please try again.', 'error');
+            console.error('Bulk apply error:', error);
         } finally {
             if (!isDailyLimitReached()) {
                 applyBtn.textContent = 'Apply to Multiple Jobs';
@@ -563,6 +564,103 @@ document.addEventListener('DOMContentLoaded', () => {
             }
             updateDailyCounterDisplay();
         }
+    }
+
+    function handleProgressEvent(data, results, max) {
+        const { event, current, total, success_count, skipped_count, error_count, result, message } = data;
+
+        // Update progress bar
+        const progressPercent = total > 0 ? (current / total) * 100 : 0;
+        progressBar.style.width = `${Math.min(progressPercent, 100)}%`;
+
+        // Update progress text
+        if (message) {
+            progressText.textContent = message;
+        } else {
+            progressText.textContent = `Processing (${current}/${total})...`;
+        }
+
+        // Update stats display
+        progressEta.textContent = `✓ ${success_count} sent | ⏭ ${skipped_count} skipped | ✗ ${error_count} errors`;
+
+        // Update daily counter in real-time on each success
+        if (result && result.status === 'success') {
+            incrementDailyCount(1);
+            updateDailyCounterDisplay();
+        }
+
+        // Collect results
+        if (result) {
+            results.push(result);
+            // Add result to UI immediately
+            addResultToList(result);
+        }
+
+        // Show results section if we have results
+        if (results.length > 0) {
+            applyResults.classList.remove('hidden');
+        }
+
+        // Handle completion/error events
+        if (event === 'complete' || event === 'error' || event === 'cancelled') {
+            if (event === 'error') {
+                showNotification(`Error: ${message}`, 'error');
+            } else if (event === 'cancelled') {
+                showNotification('Application cancelled', 'warning');
+            }
+        }
+    }
+
+    function addResultToList(result) {
+        const validStatuses = ['success', 'error', 'pending', 'failed', 'skipped'];
+        const safeStatus = validStatuses.includes(result.status) ? result.status : '';
+
+        const resultItem = document.createElement('div');
+        resultItem.className = `result-item ${safeStatus}`;
+
+        const title = document.createElement('h4');
+        title.textContent = `${result.vacancy_title || 'Vacancy'} (ID: ${result.vacancy_id})`;
+        resultItem.appendChild(title);
+
+        const statusP = document.createElement('p');
+        const statusStrong = document.createElement('strong');
+        statusStrong.textContent = 'Status: ';
+        statusP.appendChild(statusStrong);
+        statusP.appendChild(document.createTextNode(result.status || 'Unknown'));
+        resultItem.appendChild(statusP);
+
+        if (result.error_detail) {
+            const errorP = document.createElement('p');
+            const errorStrong = document.createElement('strong');
+            errorStrong.textContent = 'Error: ';
+            errorP.appendChild(errorStrong);
+            errorP.appendChild(document.createTextNode(result.error_detail));
+            resultItem.appendChild(errorP);
+        }
+
+        if (result.cover_letter) {
+            const details = document.createElement('details');
+            const summary = document.createElement('summary');
+            summary.textContent = 'Cover Letter';
+            details.appendChild(summary);
+
+            const coverLetterDiv = document.createElement('div');
+            coverLetterDiv.className = 'cover-letter';
+            const lines = String(result.cover_letter).split('\n');
+            lines.forEach((line, index) => {
+                coverLetterDiv.appendChild(document.createTextNode(line));
+                if (index < lines.length - 1) {
+                    coverLetterDiv.appendChild(document.createElement('br'));
+                }
+            });
+            details.appendChild(coverLetterDiv);
+            resultItem.appendChild(details);
+        }
+
+        applyResultsList.appendChild(resultItem);
+
+        // Scroll to latest result
+        resultItem.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
     }
 
     function displayApplyResults(results) {
@@ -632,7 +730,7 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     // ==================== SCHEDULER FUNCTIONALITY ====================
-    
+
     const schedulerEnabled = document.getElementById('scheduler-enabled');
     const schedulerStatusText = document.getElementById('scheduler-status-text');
     const nextRunInfo = document.getElementById('next-run-info');
@@ -652,7 +750,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
     // Auto-polling for scheduler status
     let schedulerPollingInterval = null;
-    
+
     function startSchedulerPolling() {
         if (schedulerPollingInterval) return;
         schedulerPollingInterval = setInterval(() => {
@@ -660,7 +758,7 @@ document.addEventListener('DOMContentLoaded', () => {
             loadSchedulerHistory();
         }, 5000); // Poll every 5 seconds
     }
-    
+
     function stopSchedulerPolling() {
         if (schedulerPollingInterval) {
             clearInterval(schedulerPollingInterval);
@@ -719,12 +817,12 @@ document.addEventListener('DOMContentLoaded', () => {
 
         if (userSettings) {
             schedulerEnabled.checked = userSettings.enabled;
-            
+
             if (userSettings.schedule) {
                 scheduleHour.value = userSettings.schedule.hour;
                 scheduleMinute.value = userSettings.schedule.minute;
                 scheduleTimezone.value = userSettings.schedule.timezone;
-                
+
                 // Set days checkboxes
                 const days = userSettings.schedule.days.split(',');
                 document.querySelectorAll('input[name="schedule-day"]').forEach(cb => {
@@ -739,10 +837,10 @@ document.addEventListener('DOMContentLoaded', () => {
                 const lastRun = new Date(userSettings.last_run_at);
                 lastRunTime.textContent = lastRun.toLocaleString('ru-RU');
             }
-            
+
             const validStatuses = ['completed', 'failed', 'running'];
-            const safeStatus = validStatuses.includes(userSettings.last_run_status) 
-                ? userSettings.last_run_status 
+            const safeStatus = validStatuses.includes(userSettings.last_run_status)
+                ? userSettings.last_run_status
                 : '—';
             lastRunResult.textContent = safeStatus;
             lastRunCount.textContent = userSettings.last_run_applications || 0;
@@ -790,7 +888,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 resume_id: resumeIdVal,
                 skills: skills.value.trim() || null,
                 experience: experience.value.trim() || null,
-                exclude_companies: excludeCompanies.value.trim() 
+                exclude_companies: excludeCompanies.value.trim()
                     ? excludeCompanies.value.split(',').map(c => c.trim())
                     : null,
                 salary_min: salaryMin.value.trim() ? parseInt(salaryMin.value) : null,
@@ -830,8 +928,8 @@ document.addEventListener('DOMContentLoaded', () => {
                 throw new Error(error.detail || 'Failed to save settings');
             }
 
-            const statusMsg = schedulerEnabled.checked 
-                ? '✅ Планировщик включен' 
+            const statusMsg = schedulerEnabled.checked
+                ? '✅ Планировщик включен'
                 : '⏸️ Планировщик отключен';
             showNotification(statusMsg, 'success');
             loadSchedulerStatus();

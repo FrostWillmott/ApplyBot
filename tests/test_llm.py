@@ -21,11 +21,12 @@ class TestLLMProvider:
 class TestGetLLMProvider:
     """Tests for get_llm_provider factory function."""
 
-    def test_get_sonnet4_provider(self):
-        """Test getting Sonnet4 provider."""
+    def test_get_ollama_provider(self):
+        """Test getting Ollama provider."""
         with patch("app.services.llm.factory.settings") as mock_settings:
-            mock_settings.llm_provider = "sonnet4"
-            mock_settings.anthropic_api_key = "test_key"
+            mock_settings.llm_provider = "ollama"
+            mock_settings.ollama_base_url = "http://localhost:11434"
+            mock_settings.ollama_model = "qwen3:14b"
 
             provider = get_llm_provider()
 
@@ -34,8 +35,9 @@ class TestGetLLMProvider:
     def test_factory_returns_provider(self):
         """Test that factory returns a provider instance."""
         with patch("app.services.llm.factory.settings") as mock_settings:
-            mock_settings.llm_provider = "sonnet4"
-            mock_settings.anthropic_api_key = "test_key"
+            mock_settings.llm_provider = "ollama"
+            mock_settings.ollama_base_url = "http://localhost:11434"
+            mock_settings.ollama_model = "qwen3:14b"
 
             provider = get_llm_provider()
 

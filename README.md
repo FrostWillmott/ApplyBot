@@ -14,18 +14,22 @@ Automated job application system for hh.ru with AI-powered cover letter generati
 - OAuth authentication with hh.ru
 - Resume selection from HH.ru profile
 - Vacancy search with API-level filtering (experience, salary, remote)
-- **AI Assistant** (Anthropic Claude):
-  - Cover letter generation
+- **AI Assistant** (Ollama qwen3:14b):
+  - Cover letter generation with real candidate data (name, email)
   - Screening questions answering
   - Auto language detection (RU/EN based on vacancy)
 - Skip already applied vacancies (fetched from HH.ru API)
-- Bulk applications with progress tracking
+- **Real-time bulk applications** with Server-Sent Events (SSE):
+  - Live progress updates during application process
+  - Instant counter updates on each successful application
+  - Results displayed as they arrive
+  - No timeout issues with long-running operations
 - **Scheduler** for automated daily applications
 - Daily application counter (200 limit with hard block)
 - Completion notifications (sound + browser)
 - Rate limiting protection (429 handling)
 - FastAPI + SQLAlchemy async architecture
-- Docker development environment
+- Docker development environment with Ollama on host
 
 ### 🔄 Duplicate Prevention
 
@@ -43,16 +47,17 @@ This prevents wasting daily quota on duplicates.
 ## 🛠️ Tech Stack
 
 ### Backend
-- **FastAPI** 0.115+ - async web framework
+- **FastAPI** 0.123+ - async web framework
 - **SQLAlchemy 2.0** - ORM with async support
 - **PostgreSQL** - main database
 - **asyncpg** - async PostgreSQL driver
 - **Alembic** - database migrations
 - **Redis** + **RQ** - task queue
 - **APScheduler** - job scheduling
+- **sse-starlette** - Server-Sent Events for real-time updates
 
 ### AI/ML
-- **Anthropic Claude** - text generation
+- **Ollama** (qwen3:14b) - local text generation
 
 ### Development
 - **Poetry** - dependency management
@@ -66,7 +71,7 @@ This prevents wasting daily quota on duplicates.
 - Python 3.11 or 3.12
 - Docker and Docker Compose
 - hh.ru developer account
-- Anthropic API key
+- Ollama installed and running locally
 
 ### Setup
 
@@ -87,7 +92,8 @@ Then edit `.env` and fill in your credentials:
 |----------|-------------|--------------|
 | `HH_CLIENT_ID` | HeadHunter OAuth Client ID | [dev.hh.ru/admin](https://dev.hh.ru/admin) |
 | `HH_CLIENT_SECRET` | HeadHunter OAuth Secret | [dev.hh.ru/admin](https://dev.hh.ru/admin) |
-| `ANTHROPIC_API_KEY` | Anthropic API Key | [console.anthropic.com](https://console.anthropic.com/) |
+| `OLLAMA_BASE_URL` | Ollama server URL | Default: http://host.docker.internal:11434 (for Docker) |
+| `OLLAMA_MODEL` | Model name | Default: qwen3:14b |
 | `POSTGRES_PASSWORD` | Database password | Set your own secure password |
 
 Other variables have sensible defaults for Docker setup.
@@ -141,6 +147,8 @@ Go to `http://localhost:8000` and click "Login with HeadHunter".
 - ReDoc: `http://localhost:8000/redoc`
 
 ### 3. Bulk Applications
+
+**Regular Endpoint** (waits for all applications to complete):
 ```bash
 POST /apply/bulk?max_applications=20
 Content-Type: application/json
@@ -158,6 +166,22 @@ Content-Type: application/json
 }
 ```
 
+**Streaming Endpoint** (real-time progress via SSE):
+```bash
+POST /apply/bulk/stream?max_applications=20
+Accept: text/event-stream
+
+# Returns Server-Sent Events with progress updates:
+# event: start
+# data: {"event":"start","current":0,"total":20,"message":"Starting..."}
+#
+# event: progress
+# data: {"event":"progress","current":1,"total":20,"success_count":1,...}
+#
+# event: complete
+# data: {"event":"complete","current":20,"total":20,"success_count":18,...}
+```
+
 ### 4. Scheduler
 
 The scheduler allows automated daily applications:
@@ -167,7 +191,7 @@ The scheduler allows automated daily applications:
 
 ## 🤖 AI Assistant
 
-The AI Assistant (powered by Anthropic Claude) provides:
+The AI Assistant (powered by Ollama with qwen3:14b model) provides:
 
 ### Cover Letter Generation
 - Personalized based on vacancy requirements and candidate profile
@@ -242,7 +266,7 @@ ApplyBot/
 │   ├── routers/           # FastAPI endpoints
 │   ├── schemas/           # Pydantic models
 │   ├── services/          # Business logic
-│   │   └── llm/           # LLM providers (Anthropic)
+│   │   └── llm/           # LLM providers (Ollama)
 │   ├── static/            # Web interface
 │   │   ├── config.js      # Frontend configuration
 │   │   ├── script.js      # Main JavaScript
@@ -289,7 +313,7 @@ poetry run pytest --cov=app --cov-report=html
 poetry run pytest tests/test_filters.py -v
 ```
 
-Current coverage: **73%** (237 tests)
+Current coverage: **72%** (239 tests)
 
 ### Code Quality
 ```bash
@@ -318,7 +342,7 @@ poetry run pre-commit run --all-files
 ## 🙏 Acknowledgments
 
 - [HeadHunter API](https://dev.hh.ru/)
-- [Anthropic](https://www.anthropic.com/)
+- [Ollama](https://ollama.ai/)
 - [FastAPI](https://fastapi.tiangolo.com/)
 
 ---

@@ -3,36 +3,53 @@ import logging
 import re
 from typing import Any
 
-from anthropic import Anthropic
+from openai import OpenAI
 
 from app.services.llm.base import LLMProvider
 
 logger = logging.getLogger(__name__)
 
 
-class ClaudeProvider(LLMProvider):
-    """Claude LLM provider."""
+class OllamaProvider(LLMProvider):
+    """Ollama LLM provider using OpenAI-compatible API."""
 
-    def __init__(self, api_key: str):
-        self.client = Anthropic(api_key=api_key)
+    def __init__(
+        self,
+        base_url: str = "http://localhost:11434",
+        model: str = "qwen3:14b",
+    ):
+        self.client = OpenAI(
+            base_url=f"{base_url}/v1",
+            api_key="ollama",  # Ollama doesn't require API key
+            timeout=300.0,  # 5 minute timeout for CPU inference
+        )
+        self.model = model
+        self.base_url = base_url
 
     async def generate(self, prompt: str) -> str:
         """Generate text from a prompt."""
         try:
+            logger.info(f"Calling Ollama at {self.base_url} with model {self.model}")
             response = await asyncio.to_thread(
-                self.client.messages.create,
-                model="claude-sonnet-4-20250514",
-                system="You are a professional copywriter.",
-                messages=[{"role": "user", "content": prompt}],
-                max_tokens=600,
+                self.client.chat.completions.create,
+                model=self.model,
+                messages=[
+                    {
+                        "role": "system",
+                        "content": "You are a professional copywriter. /no_think",
+                    },
+                    {"role": "user", "content": prompt},
+                ],
+                max_tokens=2000,
                 temperature=0.2,
             )
-            if not response.content:
+            if not response.choices:
                 raise ValueError("Empty response from LLM")
-            first_block = response.content[0]
-            if first_block.type != "text":
-                raise ValueError(f"Unexpected response type: {first_block.type}")
-            return first_block.text.strip()
+            content = response.choices[0].message.content
+            if not content:
+                raise ValueError("Empty content in response")
+            logger.info(f"Ollama response received, length: {len(content)}")
+            return content.strip()
         except ValueError:
             raise
         except Exception as e:
@@ -58,6 +75,9 @@ class ClaudeProvider(LLMProvider):
             for char in "абвгдеёжзийклмнопрстуфхцчшщъыьэюя"
         )
 
+        candidate_name = user_profile.get("name", "Кандидат")
+        candidate_email = user_profile.get("email", "")
+
         if is_russian:
             prompt = f"""Напишите профессиональное сопроводительное письмо для данной вакансии:
 
@@ -76,24 +96,29 @@ class ClaudeProvider(LLMProvider):
 {description[:800]}...
 
 ПРОФИЛЬ КАНДИДАТА:
-- Имя: {user_profile.get("name", "Кандидат")}
+- Имя: {candidate_name}
+- Email: {candidate_email}
 - Опыт: {user_profile.get("experience", "Не указан")}
 - Навыки: {user_profile.get("skills", "Не указаны")}
 - Образование: {user_profile.get("education", "Не указано")}
-- Текущая должность: {user_profile.get("current_position", "Не указана")}
-- Достижения: {user_profile.get("achievements", "Не указаны")}
+- Текущая должность: {user_profile.get("position", "Не указана")}
 
 ИНСТРУКЦИИ:
-1. Напишите краткое, профессиональное сопроводительное письмо (300-400 слов)
-2. Обратитесь к менеджеру по найму профессионально
+1. Напишите краткое, профессиональное сопроводительное письмо (200-300 слов)
+2. Начните с обращения "Здравствуйте!" или "Добрый день!"
 3. Выделите релевантный опыт, соответствующий требованиям вакансии
 4. Покажите энтузиазм к должности и компании
-5. Включите конкретные примеры, когда это возможно
-6. Завершите убедительным призывом к действию
+5. Включите конкретные примеры из опыта кандидата
+6. Завершите подписью с РЕАЛЬНЫМ именем кандидата ({candidate_name}) и email ({candidate_email})
 7. Используйте профессиональный, но теплый тон
-8. Используйте реальную информацию кандидата, а не заглушки
 
-Сгенерируйте ТОЛЬКО текст сопроводительного письма."""
+ВАЖНО:
+- НЕ используйте плейсхолдеры вроде [Ваш email], [Дата], [Имя менеджера]
+- НЕ добавляйте примечания или комментарии после письма
+- Используйте ТОЛЬКО реальные данные кандидата из профиля выше
+- Выводите ТОЛЬКО текст письма, ничего больше
+
+Сгенерируйте сопроводительное письмо:"""
         else:
             prompt = f"""Write a professional cover letter for this job application:
 
@@ -112,24 +137,29 @@ JOB DESCRIPTION:
 {description[:800]}...
 
 CANDIDATE PROFILE:
-- Name: {user_profile.get("name", "Candidate")}
+- Name: {candidate_name}
+- Email: {candidate_email}
 - Experience: {user_profile.get("experience", "Not specified")}
 - Skills: {user_profile.get("skills", "Not specified")}
 - Education: {user_profile.get("education", "Not specified")}
-- Current Position: {user_profile.get("current_position", "Not specified")}
-- Achievements: {user_profile.get("achievements", "Not specified")}
+- Current Position: {user_profile.get("position", "Not specified")}
 
 INSTRUCTIONS:
-1. Write a concise, professional cover letter (300-400 words)
-2. Address the hiring manager professionally
+1. Write a concise, professional cover letter (200-300 words)
+2. Start with "Dear Hiring Manager," or similar professional greeting
 3. Highlight relevant experience matching job requirements
 4. Show enthusiasm for the role and company
-5. Include specific examples when possible
-6. End with a strong call to action
+5. Include specific examples from candidate's experience
+6. End with signature using the REAL candidate name ({candidate_name}) and email ({candidate_email})
 7. Use professional but warm tone
-8. Use the candidate's actual information, not placeholders
 
-Generate ONLY the cover letter text."""
+IMPORTANT:
+- Do NOT use placeholders like [Your email], [Date], [Manager name]
+- Do NOT add notes or comments after the letter
+- Use ONLY real candidate data from the profile above
+- Output ONLY the cover letter text, nothing else
+
+Generate the cover letter:"""
 
         return await self.generate(prompt)
 
@@ -242,7 +272,3 @@ Provide only the numbered answers."""
             structured_answers.append({"id": question_id, "answer": answer_text})
 
         return structured_answers
-
-
-# Alias for backwards compatibility
-Sonnet4Provider = ClaudeProvider

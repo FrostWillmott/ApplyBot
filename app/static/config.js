@@ -7,7 +7,8 @@ const CONFIG = {
     },
 
     APPLY_ENDPOINTS: {
-        bulk: '/apply/bulk'
+        bulk: '/apply/bulk',
+        bulkStream: '/apply/bulk/stream'
     },
 
     HH_ENDPOINTS: {
@@ -33,8 +34,8 @@ const CONFIG = {
     },
 
     TIMING: {
-        WITH_COVER_LETTER: 15,
-        WITHOUT_COVER_LETTER: 2,
+        WITH_COVER_LETTER: 6,
+        WITHOUT_COVER_LETTER: 4,
         REQUEST_TIMEOUT: 600000
     },
 
@@ -68,4 +69,3 @@ Object.freeze(CONFIG.TIMING);
 Object.freeze(CONFIG.UI);
 Object.freeze(CONFIG.STORAGE_KEYS);
 Object.freeze(CONFIG.SCHEDULER);
-

@@ -13,7 +13,8 @@ class TestSettings:
             "HH_CLIENT_ID": "test_client_id",
             "HH_CLIENT_SECRET": "test_secret",
             "HH_REDIRECT_URI": "http://localhost/callback",
-            "ANTHROPIC_API_KEY": "test_anthropic_key",
+            "OLLAMA_BASE_URL": "http://localhost:11434",
+            "OLLAMA_MODEL": "qwen3:14b",
             "DATABASE_URL": "postgresql://test:test@localhost/test",
         }
 
@@ -24,7 +25,8 @@ class TestSettings:
 
             assert settings.hh_client_id == "test_client_id"
             assert settings.hh_client_secret == "test_secret"
-            assert settings.anthropic_api_key == "test_anthropic_key"
+            assert settings.ollama_base_url == "http://localhost:11434"
+            assert settings.ollama_model == "qwen3:14b"
 
     def test_default_scheduler_settings(self):
         """Test default scheduler settings when not overridden."""
@@ -32,7 +34,8 @@ class TestSettings:
             "HH_CLIENT_ID": "test",
             "HH_CLIENT_SECRET": "test",
             "HH_REDIRECT_URI": "http://test",
-            "ANTHROPIC_API_KEY": "test",
+            "OLLAMA_BASE_URL": "http://localhost:11434",
+            "OLLAMA_MODEL": "qwen3:14b",
             "DATABASE_URL": "postgresql://test:test@localhost/test",
             "SCHEDULER_ENABLED": "true",  # Explicitly set to test default behavior
         }
@@ -55,7 +58,8 @@ class TestSettings:
             "HH_CLIENT_ID": "test",
             "HH_CLIENT_SECRET": "test",
             "HH_REDIRECT_URI": "http://test",
-            "ANTHROPIC_API_KEY": "test",
+            "OLLAMA_BASE_URL": "http://localhost:11434",
+            "OLLAMA_MODEL": "qwen3:14b",
             "DATABASE_URL": "postgresql://test:test@localhost/test",
         }
 
@@ -72,7 +76,8 @@ class TestSettings:
             "HH_CLIENT_ID": "test",
             "HH_CLIENT_SECRET": "test",
             "HH_REDIRECT_URI": "http://test",
-            "ANTHROPIC_API_KEY": "test",
+            "OLLAMA_BASE_URL": "http://localhost:11434",
+            "OLLAMA_MODEL": "qwen3:14b",
             "DATABASE_URL": "postgresql://test:test@localhost/test",
         }
 
@@ -81,7 +86,7 @@ class TestSettings:
 
             settings = Settings()
 
-            assert settings.llm_provider == "sonnet4"
+            assert settings.llm_provider == "ollama"
 
     def test_settings_case_insensitive(self):
         """Test that settings are case insensitive."""
@@ -89,7 +94,8 @@ class TestSettings:
             "hh_client_id": "test_lower",
             "HH_CLIENT_SECRET": "test_upper",
             "HH_REDIRECT_URI": "http://test",
-            "ANTHROPIC_API_KEY": "test",
+            "OLLAMA_BASE_URL": "http://localhost:11434",
+            "OLLAMA_MODEL": "qwen3:14b",
             "DATABASE_URL": "postgresql://test:test@localhost/test",
         }
 
@@ -107,7 +113,8 @@ class TestSettings:
             "HH_CLIENT_ID": "test",
             "HH_CLIENT_SECRET": "test",
             "HH_REDIRECT_URI": "http://test",
-            "ANTHROPIC_API_KEY": "test",
+            "OLLAMA_BASE_URL": "http://localhost:11434",
+            "OLLAMA_MODEL": "qwen3:14b",
             "DATABASE_URL": "postgresql://test:test@localhost/test",
             "SCHEDULER_ENABLED": "false",
             "SCHEDULER_DEFAULT_HOUR": "14",
@@ -135,7 +142,8 @@ class TestConfigValidation:
             "HH_CLIENT_ID": "test",
             "HH_CLIENT_SECRET": "test",
             "HH_REDIRECT_URI": "http://test",
-            "ANTHROPIC_API_KEY": "test",
+            "OLLAMA_BASE_URL": "http://localhost:11434",
+            "OLLAMA_MODEL": "qwen3:14b",
             "DATABASE_URL": "postgresql://user:pass@localhost:5432/db",
         }
 

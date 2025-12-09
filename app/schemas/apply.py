@@ -65,3 +65,18 @@ class CoverLetterRequest(BaseModel):
     company: str
     skills: str
     experience: str
+
+
+class BulkApplyProgress(BaseModel):
+    """Progress event for bulk application streaming."""
+
+    event: str = Field(..., description="Event type: progress, complete, error")
+    current: int = Field(default=0, description="Current application number")
+    total: int = Field(default=0, description="Total applications to process")
+    success_count: int = Field(default=0, description="Successful applications so far")
+    skipped_count: int = Field(default=0, description="Skipped applications so far")
+    error_count: int = Field(default=0, description="Failed applications so far")
+    result: ApplyResponse | None = Field(
+        default=None, description="Latest application result"
+    )
+    message: str | None = Field(default=None, description="Status message")
