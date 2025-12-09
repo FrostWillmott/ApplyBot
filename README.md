@@ -143,8 +143,8 @@ uvicorn app.main:app --reload --host 0.0.0.0 --port 8000
 Go to `http://localhost:8000` and click "Login with HeadHunter".
 
 ### 2. API Documentation
-- Swagger UI: `http://localhost:8000/docs`
-- ReDoc: `http://localhost:8000/redoc`
+- Swagger UI: `http://localhost:8001/docs`
+- ReDoc: `http://localhost:8001/redoc`
 
 ### 3. Bulk Applications
 
