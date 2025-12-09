@@ -62,12 +62,48 @@ class SchedulerService:
             logger.info("Scheduler already running")
             return
 
+        # Clean up any stale "running" records from previous crashes/restarts
+        await self._cleanup_stale_runs()
+
         self._scheduler = AsyncIOScheduler(timezone=settings.scheduler_default_timezone)
         self._scheduler.start()
         logger.info("Scheduler started")
 
         if settings.scheduler_auto_start:
             await self._load_all_user_jobs()
+
+    async def _cleanup_stale_runs(self):
+        """Mark any stale 'running' records as interrupted.
+
+        This handles cases where the app restarted while a job was running.
+        """
+        try:
+            async with async_session() as session:
+                # Find all records stuck in "running" status
+                query = select(SchedulerRunHistory).where(
+                    SchedulerRunHistory.status == "running"
+                )
+                result = await session.execute(query)
+                stale_runs = result.scalars().all()
+
+                if stale_runs:
+                    logger.warning(
+                        f"Found {len(stale_runs)} stale 'running' records, marking as interrupted"
+                    )
+                    for run in stale_runs:
+                        await session.execute(
+                            update(SchedulerRunHistory)
+                            .where(SchedulerRunHistory.id == run.id)
+                            .values(
+                                finished_at=_now(),
+                                status="interrupted",
+                                error_message="App restarted while job was running",
+                            )
+                        )
+                    await session.commit()
+                    logger.info(f"Cleaned up {len(stale_runs)} stale run records")
+        except SQLAlchemyError as e:
+            logger.error(f"Failed to cleanup stale runs: {e}")
 
     async def stop(self):
         """Stop the scheduler."""
