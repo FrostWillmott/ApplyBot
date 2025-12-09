@@ -14,7 +14,7 @@ Automated job application system for hh.ru with AI-powered cover letter generati
 - OAuth authentication with hh.ru
 - Resume selection from HH.ru profile
 - Vacancy search with API-level filtering (experience, salary, remote)
-- **AI Assistant** (Ollama qwen3:14b):
+- **AI Assistant** (Ollama qwen3:8b):
   - Cover letter generation with real candidate data (name, email)
   - Screening questions answering
   - Auto language detection (RU/EN based on vacancy)
@@ -57,7 +57,7 @@ This prevents wasting daily quota on duplicates.
 - **sse-starlette** - Server-Sent Events for real-time updates
 
 ### AI/ML
-- **Ollama** (qwen3:14b) - local text generation
+- **Ollama** (qwen3:8b) - local text generation
 
 ### Development
 - **Poetry** - dependency management
@@ -81,7 +81,42 @@ git clone https://github.com/FrostWillmott/ApplyBot.git
 cd ApplyBot
 ```
 
-2. **Create `.env` file from example**
+2. **Install Ollama and download the model**
+
+   **Install Ollama:**
+   - macOS: Download from [ollama.ai](https://ollama.ai) or use Homebrew:
+     ```bash
+     brew install ollama
+     ```
+   - Linux:
+     ```bash
+     curl -fsSL https://ollama.ai/install.sh | sh
+     ```
+   - Windows: Download installer from [ollama.ai](https://ollama.ai)
+
+   **Start Ollama service:**
+   ```bash
+   # macOS/Linux: Start the service
+   ollama serve
+
+   # Or run in background (macOS with Homebrew)
+   brew services start ollama
+   ```
+
+   **Download the model:**
+   ```bash
+   ollama pull qwen3:8b
+   ```
+
+   This will download the model (approximately 5-6 GB). The first run may take a few minutes.
+
+   **Verify installation:**
+   ```bash
+   ollama list
+   # Should show qwen3:8b in the list
+   ```
+
+3. **Create `.env` file from example**
 ```bash
 cp .env.example .env
 ```
@@ -93,12 +128,12 @@ Then edit `.env` and fill in your credentials:
 | `HH_CLIENT_ID` | HeadHunter OAuth Client ID | [dev.hh.ru/admin](https://dev.hh.ru/admin) |
 | `HH_CLIENT_SECRET` | HeadHunter OAuth Secret | [dev.hh.ru/admin](https://dev.hh.ru/admin) |
 | `OLLAMA_BASE_URL` | Ollama server URL | Default: http://host.docker.internal:11434 (for Docker) |
-| `OLLAMA_MODEL` | Model name | Default: qwen3:14b |
+| `OLLAMA_MODEL` | Model name | Default: qwen3:8b |
 | `POSTGRES_PASSWORD` | Database password | Set your own secure password |
 
 Other variables have sensible defaults for Docker setup.
 
-3. **Start the application**
+4. **Start the application**
 ```bash
 docker compose up -d
 
@@ -191,7 +226,7 @@ The scheduler allows automated daily applications:
 
 ## 🤖 AI Assistant
 
-The AI Assistant (powered by Ollama with qwen3:14b model) provides:
+The AI Assistant (powered by Ollama with qwen3:8b model) provides:
 
 ### Cover Letter Generation
 - Personalized based on vacancy requirements and candidate profile
