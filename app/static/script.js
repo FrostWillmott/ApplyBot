@@ -1097,4 +1097,258 @@ document.addEventListener('DOMContentLoaded', () => {
             schedulerHistoryList.appendChild(runItem);
         });
     }
+
+    // ==================== Auto-Reply Section ====================
+
+    const AUTO_REPLY_ENDPOINTS = {
+        status: '/auto-reply/status',
+        settings: '/auto-reply/settings',
+        check: '/auto-reply/check',
+        history: '/auto-reply/history'
+    };
+
+    // Auto-reply UI elements
+    const autoReplyEnabled = document.getElementById('auto-reply-enabled');
+    const autoReplyInterval = document.getElementById('auto-reply-interval');
+    const autoReplyHoursStart = document.getElementById('auto-reply-hours-start');
+    const autoReplyHoursEnd = document.getElementById('auto-reply-hours-end');
+    const autoReplyAutoSend = document.getElementById('auto-reply-auto-send');
+    const autoReplyStatusText = document.getElementById('auto-reply-status-text');
+    const autoReplyLastCheck = document.getElementById('auto-reply-last-check');
+    const autoReplyProcessed = document.getElementById('auto-reply-processed');
+    const autoReplySent = document.getElementById('auto-reply-sent');
+    const autoReplyHistoryList = document.getElementById('auto-reply-history-list');
+    const saveAutoReplyBtn = document.getElementById('save-auto-reply-btn');
+    const checkMessagesBtn = document.getElementById('check-messages-btn');
+
+    // Load auto-reply status on page load
+    loadAutoReplyStatus();
+    loadAutoReplyHistory();
+
+    // Event listeners
+    if (saveAutoReplyBtn) {
+        saveAutoReplyBtn.addEventListener('click', saveAutoReplySettings);
+    }
+    if (checkMessagesBtn) {
+        checkMessagesBtn.addEventListener('click', triggerManualCheck);
+    }
+
+    async function loadAutoReplyStatus() {
+        try {
+            const response = await fetch(API_BASE_URL + AUTO_REPLY_ENDPOINTS.status, {
+                method: 'GET',
+                credentials: 'include'
+            });
+
+            if (!response.ok) {
+                throw new Error('Failed to load auto-reply status');
+            }
+
+            const data = await response.json();
+            updateAutoReplyUI(data);
+        } catch (error) {
+            if (autoReplyStatusText) {
+                autoReplyStatusText.textContent = '❌ Ошибка загрузки';
+                autoReplyStatusText.style.color = '#f44336';
+            }
+        }
+    }
+
+    function updateAutoReplyUI(data) {
+        // Update status
+        if (autoReplyStatusText) {
+            if (data.scheduler_running) {
+                if (data.settings && data.settings.enabled) {
+                    autoReplyStatusText.textContent = '✅ Активен';
+                    autoReplyStatusText.style.color = '#4CAF50';
+                } else {
+                    autoReplyStatusText.textContent = '⏸️ Планировщик запущен, но выключен';
+                    autoReplyStatusText.style.color = '#ff9800';
+                }
+            } else {
+                autoReplyStatusText.textContent = '❌ Планировщик не запущен';
+                autoReplyStatusText.style.color = '#f44336';
+            }
+        }
+
+        // Update form fields from settings
+        if (data.settings) {
+            const s = data.settings;
+            if (autoReplyEnabled) autoReplyEnabled.checked = s.enabled;
+            if (autoReplyInterval) autoReplyInterval.value = s.check_interval_minutes;
+            if (autoReplyHoursStart) autoReplyHoursStart.value = s.active_hours_start;
+            if (autoReplyHoursEnd) autoReplyHoursEnd.value = s.active_hours_end;
+            if (autoReplyAutoSend) autoReplyAutoSend.checked = s.auto_send;
+
+            // Update days checkboxes
+            if (s.active_days) {
+                const activeDays = s.active_days.toLowerCase().split(',');
+                document.querySelectorAll('input[name="auto-reply-day"]').forEach(cb => {
+                    cb.checked = activeDays.includes(cb.value);
+                });
+            }
+
+            // Update last check info
+            if (autoReplyLastCheck && s.last_check_at) {
+                const lastCheck = new Date(s.last_check_at);
+                autoReplyLastCheck.textContent = `Последняя проверка: ${lastCheck.toLocaleString('ru-RU')}`;
+            }
+
+            // Update statistics
+            if (autoReplyProcessed) autoReplyProcessed.textContent = s.total_messages_processed || 0;
+            if (autoReplySent) autoReplySent.textContent = s.total_replies_sent || 0;
+        }
+    }
+
+    async function saveAutoReplySettings() {
+        if (!saveAutoReplyBtn) return;
+
+        saveAutoReplyBtn.disabled = true;
+        saveAutoReplyBtn.textContent = 'Сохранение...';
+
+        try {
+            // Collect active days
+            const activeDays = [];
+            document.querySelectorAll('input[name="auto-reply-day"]:checked').forEach(cb => {
+                activeDays.push(cb.value);
+            });
+
+            const settings = {
+                enabled: autoReplyEnabled ? autoReplyEnabled.checked : false,
+                check_interval_minutes: autoReplyInterval ? parseInt(autoReplyInterval.value) : 60,
+                active_hours_start: autoReplyHoursStart ? parseInt(autoReplyHoursStart.value) : 9,
+                active_hours_end: autoReplyHoursEnd ? parseInt(autoReplyHoursEnd.value) : 21,
+                active_days: activeDays.join(','),
+                auto_send: autoReplyAutoSend ? autoReplyAutoSend.checked : false
+            };
+
+            const response = await fetch(API_BASE_URL + AUTO_REPLY_ENDPOINTS.settings, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify(settings),
+                credentials: 'include'
+            });
+
+            if (!response.ok) {
+                const error = await response.json();
+                throw new Error(error.detail || 'Failed to save settings');
+            }
+
+            showNotification('✅ Настройки сохранены', 'success');
+            loadAutoReplyStatus();
+        } catch (error) {
+            showNotification('❌ Ошибка сохранения', 'error');
+        } finally {
+            saveAutoReplyBtn.disabled = false;
+            saveAutoReplyBtn.textContent = '💾 Сохранить настройки';
+        }
+    }
+
+    async function triggerManualCheck() {
+        if (!checkMessagesBtn) return;
+
+        checkMessagesBtn.disabled = true;
+        checkMessagesBtn.textContent = '🔄 Проверяем...';
+
+        try {
+            const response = await fetch(API_BASE_URL + AUTO_REPLY_ENDPOINTS.check, {
+                method: 'POST',
+                credentials: 'include'
+            });
+
+            if (!response.ok) {
+                const error = await response.json();
+                throw new Error(error.detail || 'Failed to trigger check');
+            }
+
+            showNotification('🔍 Проверка запущена', 'success');
+
+            // Refresh after delay
+            setTimeout(() => {
+                loadAutoReplyStatus();
+                loadAutoReplyHistory();
+            }, 5000);
+        } catch (error) {
+            showNotification('❌ Ошибка запуска проверки', 'error');
+        } finally {
+            checkMessagesBtn.disabled = false;
+            checkMessagesBtn.textContent = '🔍 Проверить сейчас';
+        }
+    }
+
+    async function loadAutoReplyHistory() {
+        if (!autoReplyHistoryList) return;
+
+        try {
+            const response = await fetch(API_BASE_URL + AUTO_REPLY_ENDPOINTS.history + '?limit=10', {
+                method: 'GET',
+                credentials: 'include'
+            });
+
+            if (!response.ok) {
+                throw new Error('Failed to load history');
+            }
+
+            const history = await response.json();
+            displayAutoReplyHistory(history);
+        } catch (error) {
+            autoReplyHistoryList.innerHTML = '<p style="color: #666;">Не удалось загрузить историю</p>';
+        }
+    }
+
+    function displayAutoReplyHistory(history) {
+        autoReplyHistoryList.innerHTML = '';
+
+        if (!history || history.length === 0) {
+            const noHistory = document.createElement('p');
+            noHistory.style.color = '#666';
+            noHistory.textContent = 'История ответов пуста';
+            autoReplyHistoryList.appendChild(noHistory);
+            return;
+        }
+
+        history.forEach(item => {
+            const historyItem = document.createElement('div');
+            historyItem.className = `result-item ${item.was_sent ? 'success' : ''}`;
+
+            const header = document.createElement('h4');
+            header.textContent = item.vacancy_title || 'Вакансия';
+            historyItem.appendChild(header);
+
+            if (item.employer_name) {
+                const employer = document.createElement('p');
+                employer.innerHTML = `<strong>Компания:</strong> ${escapeHtml(item.employer_name)}`;
+                historyItem.appendChild(employer);
+            }
+
+            const msgPreview = document.createElement('p');
+            const preview = item.employer_message.length > 100
+                ? item.employer_message.substring(0, 100) + '...'
+                : item.employer_message;
+            msgPreview.innerHTML = `<strong>Сообщение:</strong> ${escapeHtml(preview)}`;
+            historyItem.appendChild(msgPreview);
+
+            const replyPreview = document.createElement('p');
+            const replyText = item.generated_reply.length > 100
+                ? item.generated_reply.substring(0, 100) + '...'
+                : item.generated_reply;
+            replyPreview.innerHTML = `<strong>Ответ:</strong> ${escapeHtml(replyText)}`;
+            historyItem.appendChild(replyPreview);
+
+            const status = document.createElement('p');
+            status.innerHTML = `<strong>Статус:</strong> ${item.was_sent ? '✅ Отправлено' : '📝 Только сгенерировано'}`;
+            historyItem.appendChild(status);
+
+            const time = document.createElement('p');
+            time.style.color = '#666';
+            time.style.fontSize = '0.9em';
+            const createdAt = new Date(item.created_at);
+            time.textContent = createdAt.toLocaleString('ru-RU');
+            historyItem.appendChild(time);
+
+            autoReplyHistoryList.appendChild(historyItem);
+        });
+    }
 });
