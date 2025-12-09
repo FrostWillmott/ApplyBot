@@ -152,9 +152,14 @@ class TestAuthFlow:
                     mock_scheduler.start = AsyncMock()
                     mock_scheduler.stop = AsyncMock()
 
-                    from app.main import app
+                    with patch("app.routers.auth.OAuthStateStore") as mock_oauth:
+                        mock_oauth.set = AsyncMock()
+                        mock_oauth.exists = AsyncMock(return_value=True)
+                        mock_oauth.delete = AsyncMock()
 
-                    yield TestClient(app)
+                        from app.main import app
+
+                        yield TestClient(app)
 
     def test_login_redirects_to_hh(self, client):
         """Test login redirects to HH OAuth."""

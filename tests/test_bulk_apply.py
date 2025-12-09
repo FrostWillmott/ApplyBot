@@ -3,6 +3,7 @@
 import unittest
 from unittest.mock import AsyncMock
 
+import httpx
 import pytest
 
 from app.schemas.apply import BulkApplyRequest
@@ -113,7 +114,7 @@ class TestBulkApply:
 
         # First fails, second succeeds
         service.hh_client.apply = AsyncMock(
-            side_effect=[Exception("Network error"), {"url": "ok"}]
+            side_effect=[httpx.RequestError("Network error"), {"url": "ok"}]
         )
 
         # Mock DB methods
@@ -142,7 +143,9 @@ class TestBulkApply:
         service.hh_client.get_resume_details = AsyncMock(return_value={})
 
         # All fail
-        service.hh_client.apply = AsyncMock(side_effect=Exception("Repeated failure"))
+        service.hh_client.apply = AsyncMock(
+            side_effect=httpx.RequestError("Repeated failure")
+        )
 
         # Mock DB methods and applied check - fix greenlet error here too!
         service._has_already_applied = AsyncMock(return_value=False)

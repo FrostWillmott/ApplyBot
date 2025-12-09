@@ -19,6 +19,7 @@ os.environ["OLLAMA_MODEL"] = "qwen3:14b"
 os.environ["LLM_PROVIDER"] = "ollama"
 os.environ.setdefault("DATABASE_URL", "sqlite+aiosqlite:///./test.db")
 os.environ.setdefault("SCHEDULER_ENABLED", "false")
+os.environ.setdefault("REDIS_URL", "redis://localhost:6379/0")
 
 
 @pytest.fixture
@@ -132,3 +133,16 @@ def mock_llm_provider():
         return_value=[{"id": "1", "answer": "Test answer"}]
     )
     return provider
+
+
+@pytest.fixture
+def mock_oauth_state_store(monkeypatch):
+    """Mock OAuthStateStore for tests that don't have Redis."""
+    mock_store = MagicMock()
+    mock_store.set = AsyncMock()
+    mock_store.get = AsyncMock(return_value="test_host")
+    mock_store.exists = AsyncMock(return_value=True)
+    mock_store.delete = AsyncMock()
+
+    monkeypatch.setattr("app.routers.auth.OAuthStateStore", mock_store)
+    return mock_store

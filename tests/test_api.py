@@ -105,9 +105,14 @@ class TestAuthEndpoints:
                     mock_scheduler.start = AsyncMock()
                     mock_scheduler.stop = AsyncMock()
 
-                    from app.main import app
+                    with patch("app.routers.auth.OAuthStateStore") as mock_oauth:
+                        mock_oauth.set = AsyncMock()
+                        mock_oauth.exists = AsyncMock(return_value=True)
+                        mock_oauth.delete = AsyncMock()
 
-                    yield TestClient(app, raise_server_exceptions=False)
+                        from app.main import app
+
+                        yield TestClient(app, raise_server_exceptions=False)
 
     def test_login_redirect(self, client):
         """Test login redirects to HH OAuth."""
