@@ -1,4 +1,5 @@
 import asyncio
+import json
 import logging
 import random
 from datetime import UTC, datetime, timedelta
@@ -164,37 +165,35 @@ class HHClient:
 
         try:
             # Create a temporary client to visit hh.ru main page
-            temp_client = httpx.AsyncClient(
+            async with httpx.AsyncClient(
                 timeout=httpx.Timeout(30.0),
                 follow_redirects=True,
                 cookies=httpx.Cookies(),
-            )
-
-            headers = self._get_headers()
-            headers.update(
-                {
-                    "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8",
-                    "Sec-Fetch-Dest": "document",
-                    "Sec-Fetch-Mode": "navigate",
-                    "Sec-Fetch-Site": "none",
-                    "Sec-Fetch-User": "?1",
-                }
-            )
-
-            logger.info("Initializing cookies from hh.ru main page...")
-            await temp_client.get("https://hh.ru/", headers=headers)
-
-            # Copy cookies from temp client to main client
-            # httpx.Cookies iteration returns cookie names, so we use .jar to get actual Cookie objects
-            for cookie in temp_client.cookies.jar:
-                self.client.cookies.set(
-                    name=cookie.name,
-                    value=cookie.value,
-                    domain=cookie.domain,
-                    path=cookie.path,
+            ) as temp_client:
+                headers = self._get_headers()
+                headers.update(
+                    {
+                        "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8",
+                        "Sec-Fetch-Dest": "document",
+                        "Sec-Fetch-Mode": "navigate",
+                        "Sec-Fetch-Site": "none",
+                        "Sec-Fetch-User": "?1",
+                    }
                 )
 
-            await temp_client.aclose()
+                logger.info("Initializing cookies from hh.ru main page...")
+                await temp_client.get("https://hh.ru/", headers=headers)
+
+                # Copy cookies from temp client to main client
+                # httpx.Cookies iteration returns cookie names, so we use .jar to get actual Cookie objects
+                for cookie in temp_client.cookies.jar:
+                    self.client.cookies.set(
+                        name=cookie.name,
+                        value=cookie.value,
+                        domain=cookie.domain,
+                        path=cookie.path,
+                    )
+
             self._cookies_initialized = True
             logger.info(
                 f"Cookies initialized. Total cookies: {len(self.client.cookies)}"
@@ -203,10 +202,10 @@ class HHClient:
             # Wait a bit after getting cookies to mimic human behavior
             await asyncio.sleep(random.uniform(2.0, 5.0))
 
-        except Exception as e:
-            logger.warning(
-                f"Failed to initialize cookies from hh.ru: {e}. Continuing without pre-initialized cookies."
-            )
+        except httpx.TimeoutException as e:
+            logger.warning(f"Timeout initializing cookies from hh.ru: {e}")
+        except httpx.RequestError as e:
+            logger.warning(f"Network error initializing cookies: {e}")
 
     async def _ensure_token(self):
         """Ensure we have a valid access token."""
@@ -349,7 +348,7 @@ class HHClient:
 
                 try:
                     return response.json()
-                except Exception as e:
+                except json.JSONDecodeError as e:
                     if response.status_code in [200, 201, 204]:
                         return {
                             "status": "success",
@@ -375,7 +374,7 @@ class HHClient:
                     error_data = {}
                     try:
                         error_data = e.response.json()
-                    except Exception:
+                    except json.JSONDecodeError:
                         error_data = {"message": e.response.text[:500]}
 
                     logger.error(
@@ -391,7 +390,7 @@ class HHClient:
                     error_data = {}
                     try:
                         error_data = e.response.json()
-                    except Exception:
+                    except json.JSONDecodeError:
                         error_data = {"message": e.response.text[:500]}
 
                     logger.error(
@@ -532,46 +531,43 @@ class HHClient:
         """
         try:
             # Visit the HTML vacancy page first (like a browser would)
-            temp_client = httpx.AsyncClient(
+            async with httpx.AsyncClient(
                 timeout=httpx.Timeout(30.0),
                 follow_redirects=True,
                 cookies=self.client.cookies,  # Share cookies with main client
-            )
-
-            headers = self._get_headers()
-            headers.update(
-                {
-                    "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8",
-                    "Sec-Fetch-Dest": "document",
-                    "Sec-Fetch-Mode": "navigate",
-                    "Sec-Fetch-Site": "none",
-                    "Sec-Fetch-User": "?1",
-                    "Referer": "https://hh.ru/search/vacancy",
-                }
-            )
-
-            logger.info(f"Warming up: visiting vacancy page {vacancy_id}...")
-            await temp_client.get(
-                f"https://hh.ru/vacancy/{vacancy_id}", headers=headers
-            )
-
-            # Copy any new cookies back to main client
-            for cookie in temp_client.cookies.jar:
-                self.client.cookies.set(
-                    name=cookie.name,
-                    value=cookie.value,
-                    domain=cookie.domain,
-                    path=cookie.path,
+            ) as temp_client:
+                headers = self._get_headers()
+                headers.update(
+                    {
+                        "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8",
+                        "Sec-Fetch-Dest": "document",
+                        "Sec-Fetch-Mode": "navigate",
+                        "Sec-Fetch-Site": "none",
+                        "Sec-Fetch-User": "?1",
+                        "Referer": "https://hh.ru/search/vacancy",
+                    }
                 )
 
-            await temp_client.aclose()
+                logger.info(f"Warming up: visiting vacancy page {vacancy_id}...")
+                await temp_client.get(
+                    f"https://hh.ru/vacancy/{vacancy_id}", headers=headers
+                )
 
-            # Reading simulation removed for speed
-            pass
+                # Copy any new cookies back to main client
+                for cookie in temp_client.cookies.jar:
+                    self.client.cookies.set(
+                        name=cookie.name,
+                        value=cookie.value,
+                        domain=cookie.domain,
+                        path=cookie.path,
+                    )
 
             return True
-        except Exception as e:
-            logger.warning(f"Failed to warm up vacancy page {vacancy_id}: {e}")
+        except httpx.TimeoutException as e:
+            logger.warning(f"Timeout warming up vacancy page {vacancy_id}: {e}")
+            return False
+        except httpx.RequestError as e:
+            logger.warning(f"Network error warming up vacancy page {vacancy_id}: {e}")
             return False
 
     async def apply(

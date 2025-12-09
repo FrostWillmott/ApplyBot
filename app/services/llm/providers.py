@@ -3,7 +3,7 @@ import logging
 import re
 from typing import Any
 
-from openai import OpenAI
+from openai import APIError, APITimeoutError, OpenAI
 
 from app.services.llm.base import LLMProvider
 
@@ -52,9 +52,12 @@ class OllamaProvider(LLMProvider):
             return content.strip()
         except ValueError:
             raise
-        except Exception as e:
-            logger.error(f"Error generating content: {e}")
-            raise ValueError(f"Failed to generate content: {e!s}") from e
+        except APITimeoutError as e:
+            logger.error(f"LLM timeout: {e}")
+            raise ValueError("LLM request timed out") from e
+        except APIError as e:
+            logger.error(f"LLM API error: {e}")
+            raise ValueError(f"LLM API error: {e!s}") from e
 
     async def generate_cover_letter(
         self, vacancy: dict[str, Any], user_profile: dict[str, Any]

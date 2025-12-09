@@ -6,9 +6,11 @@ from datetime import UTC, datetime
 from typing import Any
 from zoneinfo import ZoneInfo
 
+import httpx
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from apscheduler.triggers.cron import CronTrigger
 from sqlalchemy import select, update
+from sqlalchemy.exc import SQLAlchemyError
 
 from app.core.config import settings
 from app.core.storage import async_session
@@ -228,9 +230,28 @@ class SchedulerService:
                 f"sent={sent}, skipped={skipped}, failed={failed}"
             )
 
-        except Exception as e:
-            logger.error(f"Auto-apply failed for user {user_id}: {e}")
+        except httpx.RequestError as e:
+            logger.error(f"Auto-apply network error for user {user_id}: {e}")
+            await self._record_run_failure(user_id, run_history, f"Network error: {e}")
+        except SQLAlchemyError as e:
+            logger.error(f"Auto-apply database error for user {user_id}: {e}")
+            # Don't try to update DB if we have a DB error
+        except ValueError as e:
+            logger.error(f"Auto-apply validation error for user {user_id}: {e}")
+            await self._record_run_failure(user_id, run_history, str(e))
 
+        finally:
+            self._running_jobs[user_id] = False
+            self._cancel_requested[user_id] = False
+
+    async def _record_run_failure(
+        self,
+        user_id: str,
+        run_history: SchedulerRunHistory | None,
+        error_message: str,
+    ) -> None:
+        """Record failure in run history and settings."""
+        try:
             async with async_session() as session:
                 if run_history:
                     await session.execute(
@@ -239,7 +260,7 @@ class SchedulerService:
                         .values(
                             finished_at=_now(),
                             status="failed",
-                            error_message=str(e),
+                            error_message=error_message,
                         )
                     )
 
@@ -249,10 +270,8 @@ class SchedulerService:
                     .values(last_run_at=_now(), last_run_status="failed")
                 )
                 await session.commit()
-
-        finally:
-            self._running_jobs[user_id] = False
-            self._cancel_requested[user_id] = False
+        except SQLAlchemyError as db_error:
+            logger.error(f"Failed to record run failure: {db_error}")
 
     def is_cancel_requested(self, user_id: str) -> bool:
         """Check if cancellation was requested for user."""

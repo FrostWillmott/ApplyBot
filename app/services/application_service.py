@@ -6,8 +6,10 @@ import random
 from collections.abc import AsyncIterator, Callable
 from datetime import UTC, datetime
 
+import httpx
 from fastapi import HTTPException
 from sqlalchemy import select
+from sqlalchemy.exc import SQLAlchemyError
 
 from app.core.storage import async_session
 from app.models.application import ApplicationHistory
@@ -115,13 +117,29 @@ class ApplicationService:
                 vacancy_title=vacancy.get("name") if vacancy else None,
                 error_detail=f"HTTP {e.status_code}: {e.detail}",
             )
-        except Exception as e:
-            logger.error(f"Application failed for vacancy {vacancy_id}: {e}")
+        except httpx.RequestError as e:
+            logger.error(f"Network error for vacancy {vacancy_id}: {e}")
+            return ApplyResponse(
+                vacancy_id=vacancy_id,
+                status="error",
+                vacancy_title=vacancy.get("name") if vacancy else None,
+                error_detail=f"Network error: {e}",
+            )
+        except ValueError as e:
+            logger.error(f"Validation error for vacancy {vacancy_id}: {e}")
             return ApplyResponse(
                 vacancy_id=vacancy_id,
                 status="error",
                 vacancy_title=vacancy.get("name") if vacancy else None,
                 error_detail=str(e),
+            )
+        except SQLAlchemyError as e:
+            logger.error(f"Database error for vacancy {vacancy_id}: {e}")
+            return ApplyResponse(
+                vacancy_id=vacancy_id,
+                status="error",
+                vacancy_title=vacancy.get("name") if vacancy else None,
+                error_detail="Database error",
             )
 
     async def bulk_apply(
@@ -253,8 +271,14 @@ class ApplicationService:
             )
             return results
 
-        except Exception as e:
-            logger.error(f"Bulk application failed: {e}")
+        except httpx.RequestError as e:
+            logger.error(f"Bulk application network error: {e}")
+            raise
+        except SQLAlchemyError as e:
+            logger.error(f"Bulk application database error: {e}")
+            raise
+        except ValueError as e:
+            logger.error(f"Bulk application validation error: {e}")
             raise
 
     async def bulk_apply_stream(
@@ -478,8 +502,8 @@ class ApplicationService:
                 message=f"Completed! {success_count} applications sent",
             )
 
-        except Exception as e:
-            logger.error(f"Streaming bulk application failed: {e}")
+        except httpx.RequestError as e:
+            logger.error(f"Streaming bulk application network error: {e}")
             yield BulkApplyProgress(
                 event="error",
                 current=current,
@@ -487,7 +511,29 @@ class ApplicationService:
                 success_count=success_count,
                 skipped_count=skipped_count,
                 error_count=error_count,
-                message=f"Error: {e!s}",
+                message=f"Network error: {e!s}",
+            )
+        except SQLAlchemyError as e:
+            logger.error(f"Streaming bulk application database error: {e}")
+            yield BulkApplyProgress(
+                event="error",
+                current=current,
+                total=max_applications,
+                success_count=success_count,
+                skipped_count=skipped_count,
+                error_count=error_count,
+                message=f"Database error: {e!s}",
+            )
+        except ValueError as e:
+            logger.error(f"Streaming bulk application validation error: {e}")
+            yield BulkApplyProgress(
+                event="error",
+                current=current,
+                total=max_applications,
+                success_count=success_count,
+                skipped_count=skipped_count,
+                error_count=error_count,
+                message=f"Validation error: {e!s}",
             )
 
     async def _search_vacancies_for_bulk(
@@ -549,35 +595,107 @@ class ApplicationService:
         request: ApplyRequest,
         use_cover_letter: bool = True,
     ) -> dict:
-        """Generate cover letter and answer screening questions."""
-        result = {"cover_letter": None}
+        """Generate cover letter and answer screening questions.
 
+        Note: Questions are always answered when available, regardless of
+        use_cover_letter setting. The LLM is used for both cover letters
+        and screening question answers.
+        """
+        result = {"cover_letter": None, "answers": None}
+        user_profile = await self._build_user_profile(request)
+
+        # Generate cover letter if enabled
         if use_cover_letter:
-            user_profile = await self._build_user_profile(request)
             cover_letter = await self.llm_provider.generate_cover_letter(
                 vacancy, user_profile
             )
             result["cover_letter"] = cover_letter
+        else:
+            logger.info(
+                f"Skipping cover letter generation for vacancy {vacancy.get('id')}"
+            )
 
-            questions = await self.hh_client.get_vacancy_questions(vacancy["id"])
-            if questions:
+        # Always try to answer screening questions (they can be required)
+        questions = await self.hh_client.get_vacancy_questions(vacancy["id"])
+        if questions:
+            # Filter out questions with external links
+            answerable_questions = self._filter_answerable_questions(questions)
+
+            if answerable_questions:
                 logger.info(
-                    f"Vacancy {vacancy.get('id')} has {len(questions)} screening questions"
+                    f"Vacancy {vacancy.get('id')} has {len(answerable_questions)} "
+                    f"answerable screening questions (total: {len(questions)})"
                 )
                 answers = await self.llm_provider.answer_screening_questions(
-                    questions, vacancy, user_profile
+                    answerable_questions, vacancy, user_profile
                 )
                 if answers:
                     logger.info(
                         f"Generated {len(answers)} answers for screening questions"
                     )
                     result["answers"] = answers
-        else:
-            logger.info(
-                f"Skipping cover letter generation for vacancy {vacancy.get('id')}"
-            )
+            elif len(questions) > 0:
+                logger.info(
+                    f"Vacancy {vacancy.get('id')}: all {len(questions)} questions "
+                    "have external links, skipping"
+                )
 
         return result
+
+    def _filter_answerable_questions(self, questions: list[dict]) -> list[dict]:
+        """Filter out questions that require external resources.
+
+        Questions with URLs pointing to external resources (not text-based)
+        cannot be answered by the LLM.
+        """
+        answerable = []
+
+        for q in questions:
+            question_text = q.get("text", q.get("question", ""))
+
+            # Skip questions that are just links
+            if self._is_external_link_question(question_text):
+                logger.debug(f"Skipping external link question: {question_text[:100]}")
+                continue
+
+            # Skip questions with required_url field (external test)
+            if q.get("required_url") or q.get("url"):
+                logger.debug(f"Skipping question with required URL: {q}")
+                continue
+
+            answerable.append(q)
+
+        return answerable
+
+    def _is_external_link_question(self, text: str) -> bool:
+        """Check if question text is primarily an external link."""
+        if not text:
+            return False
+
+        text_lower = text.lower().strip()
+
+        # Common patterns for external test links
+        external_patterns = [
+            "http://",
+            "https://",
+            "пройдите тест по ссылке",
+            "перейдите по ссылке",
+            "выполните задание по ссылке",
+            "complete the test at",
+            "follow the link",
+            "go to the link",
+        ]
+
+        for pattern in external_patterns:
+            if pattern in text_lower:
+                # Check if URL is not hh.ru (hh.ru links are internal)
+                if "http" in pattern:
+                    if "hh.ru" not in text_lower:
+                        return True
+                else:
+                    return True
+
+        return False
 
     async def _build_user_profile(self, request: ApplyRequest) -> dict:
         """Build user profile dictionary for LLM."""
@@ -656,8 +774,46 @@ class ApplicationService:
             )
             return False, "Vacancy requires cover letter (enable AI assistant)"
 
+        # Check for external tests (tests with links to external resources)
+        if self._has_external_test(vacancy):
+            logger.info(
+                f"Vacancy {vacancy_id} ({vacancy_name}): SKIPPED - external test required"
+            )
+            return False, "Vacancy requires external test (cannot be answered via API)"
+
         logger.info(f"Vacancy {vacancy_id} ({vacancy_name}): CAN APPLY")
         return True, ""
+
+    def _has_external_test(self, vacancy: dict) -> bool:
+        """Check if vacancy has an external test that cannot be answered via API.
+
+        External tests are those that require going to an external URL
+        (not HH.ru's built-in questions that we can answer via API).
+        """
+        # Check for test field with external link
+        test = vacancy.get("test")
+        if test:
+            # If test has a URL pointing outside HH.ru, it's external
+            test_url = test.get("url", "") or test.get("href", "")
+            if test_url and not test_url.startswith("https://hh.ru"):
+                logger.debug(f"Vacancy has external test URL: {test_url}")
+                return True
+
+            # Check if test is required and has external indicator
+            if test.get("required", False):
+                # If there's no way to answer via API, it's external
+                # HH.ru API questions are fetched via /vacancies/{id}/questions
+                # External tests won't have API-answerable questions
+                return True
+
+        # Check for branded_template with external links
+        branded = vacancy.get("branded_template")
+        if branded:
+            # Some branded vacancies have external application forms
+            if branded.get("external_form_url"):
+                return True
+
+        return False
 
     async def _has_already_applied(self, vacancy_id: str, resume_id: str) -> bool:
         """Check if we've already applied to this vacancy."""

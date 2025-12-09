@@ -22,6 +22,9 @@ class Settings(BaseSettings):
     # Database
     database_url: AnyUrl
 
+    # Redis
+    redis_url: str = "redis://redis:6379/0"
+
     # Security
     cookie_secure: bool = Field(
         default=True,

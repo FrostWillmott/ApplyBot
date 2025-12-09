@@ -2,7 +2,9 @@
 
 import logging
 
+import httpx
 from fastapi import APIRouter, Depends, HTTPException, Query
+from sqlalchemy.exc import SQLAlchemyError
 
 from app.schemas.scheduler import (
     ManualRunRequest,
@@ -50,11 +52,12 @@ async def get_scheduler_status(
             next_scheduled_run=status.get("next_scheduled_run"),
             user_settings=user_settings,
         )
-    except Exception as e:
-        logger.error(f"Failed to get scheduler status: {e}")
-        raise HTTPException(
-            status_code=500, detail=f"Failed to get scheduler status: {e}"
-        )
+    except SQLAlchemyError as e:
+        logger.error(f"Database error getting scheduler status: {e}")
+        raise HTTPException(status_code=500, detail="Database error")
+    except ValueError as e:
+        logger.error(f"Invalid scheduler status: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
 
 
 @router.get("/settings", response_model=SchedulerSettingsResponse | None)
@@ -66,11 +69,9 @@ async def get_settings(
         user_id = _get_current_user_id()
         settings_response = await scheduler.get_user_settings(user_id)
         return settings_response
-    except Exception as e:
-        logger.error(f"Failed to get scheduler settings: {e}")
-        raise HTTPException(
-            status_code=500, detail=f"Failed to get scheduler settings: {e}"
-        )
+    except SQLAlchemyError as e:
+        logger.error(f"Database error getting settings: {e}")
+        raise HTTPException(status_code=500, detail="Database error")
 
 
 @router.post("/settings", response_model=SchedulerSettingsResponse)
@@ -87,11 +88,12 @@ async def update_settings(
         logger.info(f"Scheduler settings updated for user {user_id}: {status}")
 
         return result
-    except Exception as e:
-        logger.error(f"Failed to update scheduler settings: {e}")
-        raise HTTPException(
-            status_code=500, detail=f"Failed to update scheduler settings: {e}"
-        )
+    except SQLAlchemyError as e:
+        logger.error(f"Database error updating settings: {e}")
+        raise HTTPException(status_code=500, detail="Database error")
+    except ValueError as e:
+        logger.error(f"Invalid settings: {e}")
+        raise HTTPException(status_code=400, detail=str(e))
 
 
 @router.post("/enable")
@@ -128,9 +130,9 @@ async def enable_scheduler(
         return {"status": "success", "message": "Scheduler enabled"}
     except HTTPException:
         raise
-    except Exception as e:
-        logger.error(f"Failed to enable scheduler: {e}")
-        raise HTTPException(status_code=500, detail=f"Failed to enable scheduler: {e}")
+    except SQLAlchemyError as e:
+        logger.error(f"Database error enabling scheduler: {e}")
+        raise HTTPException(status_code=500, detail="Database error")
 
 
 @router.post("/disable")
@@ -159,9 +161,9 @@ async def disable_scheduler(
         await scheduler.update_user_settings(user_id, update_request)
 
         return {"status": "success", "message": "Scheduler disabled"}
-    except Exception as e:
-        logger.error(f"Failed to disable scheduler: {e}")
-        raise HTTPException(status_code=500, detail=f"Failed to disable scheduler: {e}")
+    except SQLAlchemyError as e:
+        logger.error(f"Database error disabling scheduler: {e}")
+        raise HTTPException(status_code=500, detail="Database error")
 
 
 @router.post("/run", response_model=ManualRunResponse)
@@ -174,11 +176,15 @@ async def trigger_manual_run(
         user_id = _get_current_user_id()
         result = await scheduler.trigger_manual_run(user_id, request.max_applications)
         return result
-    except Exception as e:
-        logger.error(f"Failed to trigger manual run: {e}")
-        raise HTTPException(
-            status_code=500, detail=f"Failed to trigger manual run: {e}"
-        )
+    except httpx.RequestError as e:
+        logger.error(f"Network error during manual run: {e}")
+        raise HTTPException(status_code=502, detail="Network error")
+    except SQLAlchemyError as e:
+        logger.error(f"Database error during manual run: {e}")
+        raise HTTPException(status_code=500, detail="Database error")
+    except ValueError as e:
+        logger.error(f"Invalid request for manual run: {e}")
+        raise HTTPException(status_code=400, detail=str(e))
 
 
 @router.post("/stop")
@@ -194,9 +200,9 @@ async def stop_running_job(
             return {"status": "success", "message": "Cancellation requested"}
         else:
             return {"status": "info", "message": "No running job to cancel"}
-    except Exception as e:
-        logger.error(f"Failed to stop running job: {e}")
-        raise HTTPException(status_code=500, detail=f"Failed to stop job: {e}")
+    except SQLAlchemyError as e:
+        logger.error(f"Database error stopping job: {e}")
+        raise HTTPException(status_code=500, detail="Database error")
 
 
 @router.get("/history", response_model=RunHistoryResponse)
@@ -224,6 +230,6 @@ async def get_run_history(
         ]
 
         return RunHistoryResponse(runs=history_items, total_count=len(history_items))
-    except Exception as e:
-        logger.error(f"Failed to get run history: {e}")
-        raise HTTPException(status_code=500, detail=f"Failed to get run history: {e}")
+    except SQLAlchemyError as e:
+        logger.error(f"Database error getting run history: {e}")
+        raise HTTPException(status_code=500, detail="Database error")

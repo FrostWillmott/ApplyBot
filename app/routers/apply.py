@@ -2,6 +2,7 @@
 
 import json
 
+import httpx
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sse_starlette.sse import EventSourceResponse
 
@@ -10,7 +11,7 @@ from app.services.application_service import (
     ApplicationService,
     create_application_service,
 )
-from app.services.hh_client import HHClient, get_hh_client
+from app.services.hh_client import HHAPIError, HHClient, get_hh_client
 from app.services.llm.dependencies import llm_provider_dep
 from app.utils.validators import validate_bulk_application_limits
 
@@ -40,8 +41,14 @@ async def apply_to_vacancy(
 
         return result
 
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Application failed: {e!s}")
+    except HTTPException:
+        raise
+    except HHAPIError as e:
+        raise HTTPException(status_code=e.status_code, detail=e.message)
+    except httpx.RequestError as e:
+        raise HTTPException(status_code=502, detail=f"Network error: {e}")
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
 
 
 @router.post("/bulk", response_model=list[ApplyResponse])
@@ -67,8 +74,12 @@ async def bulk_apply(
 
     except HTTPException:
         raise
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Bulk application failed: {e!s}")
+    except HHAPIError as e:
+        raise HTTPException(status_code=e.status_code, detail=e.message)
+    except httpx.RequestError as e:
+        raise HTTPException(status_code=502, detail=f"Network error: {e}")
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
 
 
 @router.post("/bulk/stream")
@@ -109,5 +120,7 @@ async def search_vacancies(
             text=text, page=page, per_page=per_page
         )
         return results
-    except Exception as e:
-        raise HTTPException(status_code=502, detail=f"Search failed: {e!s}")
+    except HHAPIError as e:
+        raise HTTPException(status_code=e.status_code, detail=e.message)
+    except httpx.RequestError as e:
+        raise HTTPException(status_code=502, detail=f"Network error: {e}")

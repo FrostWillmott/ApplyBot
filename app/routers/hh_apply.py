@@ -1,10 +1,11 @@
 import logging
 
+import httpx
 from fastapi import APIRouter, Cookie, Depends, Request
 from starlette.responses import JSONResponse
 
 from app.core.storage import TokenStorage
-from app.services.hh_client import HHClient, get_hh_client
+from app.services.hh_client import HHAPIError, HHClient, get_hh_client
 
 logger = logging.getLogger(__name__)
 
@@ -40,11 +41,17 @@ async def get_user_resumes(
             }
             for r in resumes
         ]
-    except Exception as e:
-        logger.error(f"Failed to get resumes: {e}")
+    except HHAPIError as e:
+        logger.error(f"HH API error getting resumes: {e}")
         return JSONResponse(
-            status_code=500,
-            content={"detail": f"Failed to fetch resumes: {e!s}"},
+            status_code=e.status_code,
+            content={"detail": f"HH API error: {e.message}"},
+        )
+    except httpx.RequestError as e:
+        logger.error(f"Network error getting resumes: {e}")
+        return JSONResponse(
+            status_code=502,
+            content={"detail": "Network error connecting to HH.ru"},
         )
 
 
@@ -89,8 +96,15 @@ async def get_user_profile(
         return profile
     except ValueError as e:
         return JSONResponse(status_code=404, content={"detail": str(e)})
-    except Exception as e:
+    except HHAPIError as e:
+        logger.error(f"HH API error getting profile: {e}")
         return JSONResponse(
-            status_code=500,
-            content={"detail": f"Failed to fetch profile: {e!s}"},
+            status_code=e.status_code,
+            content={"detail": f"HH API error: {e.message}"},
+        )
+    except httpx.RequestError as e:
+        logger.error(f"Network error getting profile: {e}")
+        return JSONResponse(
+            status_code=502,
+            content={"detail": "Network error connecting to HH.ru"},
         )

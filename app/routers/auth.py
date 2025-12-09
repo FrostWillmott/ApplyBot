@@ -1,25 +1,28 @@
 """Authentication router for HH.ru OAuth flow."""
 
+import logging
 import secrets
 
+import httpx
 from fastapi import APIRouter, Cookie, HTTPException, Response
 from fastapi.responses import JSONResponse, RedirectResponse
 from starlette.requests import Request
 
 from app.core.config import settings
+from app.core.redis_client import OAuthStateStore
 from app.core.storage import TokenStorage
 from app.services.hh_client import HHClient
 
-router = APIRouter(prefix="/auth", tags=["auth"])
+logger = logging.getLogger(__name__)
 
-_state_store: dict[str, str] = {}
+router = APIRouter(prefix="/auth", tags=["auth"])
 
 
 @router.get("/login")
 async def login(request: Request):
     """Initiate OAuth flow with HH.ru."""
     state = secrets.token_urlsafe(16)
-    _state_store[state] = request.client.host
+    await OAuthStateStore.set(state, request.client.host or "unknown")
     params = {
         "response_type": "code",
         "client_id": settings.hh_client_id,
@@ -35,7 +38,7 @@ async def login(request: Request):
 @router.get("/callback")
 async def callback(code: str, state: str, response: Response):
     """Handle OAuth callback from HH.ru."""
-    if state not in _state_store:
+    if not await OAuthStateStore.exists(state):
         raise HTTPException(status_code=400, detail="Invalid OAuth state")
 
     hh = HHClient()
@@ -50,7 +53,7 @@ async def callback(code: str, state: str, response: Response):
         }
     )
 
-    _state_store.pop(state, None)
+    await OAuthStateStore.delete(state)
 
     redirect_response = RedirectResponse(url="/")
     redirect_response.set_cookie(
@@ -92,10 +95,17 @@ async def auth_status(
                     "last_name": user_info.get("last_name"),
                 },
             )
-        except Exception:
+        except httpx.HTTPStatusError as e:
+            logger.warning(f"Token validation failed: HTTP {e.response.status_code}")
             return JSONResponse(
                 status_code=200,
                 content={"authenticated": False, "reason": "Invalid token"},
+            )
+        except httpx.RequestError as e:
+            logger.warning(f"Token validation network error: {e}")
+            return JSONResponse(
+                status_code=200,
+                content={"authenticated": False, "reason": "Network error"},
             )
 
     token = await TokenStorage.get_latest()

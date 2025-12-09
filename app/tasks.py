@@ -9,7 +9,9 @@ import logging
 from datetime import UTC, datetime
 from typing import Any
 
+import httpx
 from redis import Redis
+from redis.exceptions import RedisError
 from rq import Queue, Worker
 from rq.job import Job
 
@@ -111,8 +113,24 @@ def process_single_application(
         )
         return result
 
-    except Exception as e:
-        logger.error(f"Single application failed for vacancy {vacancy_id}: {e!s}")
+    except httpx.RequestError as e:
+        logger.error(f"Network error for vacancy {vacancy_id}: {e!s}")
+        return {
+            "vacancy_id": vacancy_id,
+            "status": "error",
+            "error_detail": f"Network error: {e}",
+            "timestamp": datetime.now(UTC).isoformat(),
+        }
+    except ValueError as e:
+        logger.error(f"Validation error for vacancy {vacancy_id}: {e!s}")
+        return {
+            "vacancy_id": vacancy_id,
+            "status": "error",
+            "error_detail": str(e),
+            "timestamp": datetime.now(UTC).isoformat(),
+        }
+    except RuntimeError as e:
+        logger.error(f"Runtime error for vacancy {vacancy_id}: {e!s}")
         return {
             "vacancy_id": vacancy_id,
             "status": "error",
@@ -153,8 +171,22 @@ def process_bulk_application(
             "timestamp": datetime.now(UTC).isoformat(),
         }
 
-    except Exception as e:
-        logger.error(f"Bulk application failed for position {position}: {e!s}")
+    except httpx.RequestError as e:
+        logger.error(f"Bulk application network error for {position}: {e!s}")
+        return {
+            "status": "error",
+            "error_detail": f"Network error: {e}",
+            "timestamp": datetime.now(UTC).isoformat(),
+        }
+    except ValueError as e:
+        logger.error(f"Bulk application validation error for {position}: {e!s}")
+        return {
+            "status": "error",
+            "error_detail": str(e),
+            "timestamp": datetime.now(UTC).isoformat(),
+        }
+    except RuntimeError as e:
+        logger.error(f"Bulk application runtime error for {position}: {e!s}")
         return {
             "status": "error",
             "error_detail": str(e),
@@ -265,8 +297,10 @@ def retry_failed_jobs() -> int:
         try:
             failed_registry.requeue(job_id)
             retry_count += 1
-        except Exception as e:
-            logger.error(f"Failed to retry job {job_id}: {e!s}")
+        except RedisError as e:
+            logger.error(f"Redis error retrying job {job_id}: {e!s}")
+        except ValueError as e:
+            logger.error(f"Invalid job {job_id}: {e!s}")
 
     logger.info(f"Requeued {retry_count} failed jobs for retry")
     return retry_count
@@ -296,8 +330,12 @@ def token_refresh_task():
         # Implementation depends on your token management strategy
         asyncio.run(_check_and_refresh_tokens())
         logger.info("Token refresh check completed")
-    except Exception as e:
-        logger.error(f"Token refresh check failed: {e!s}")
+    except httpx.RequestError as e:
+        logger.error(f"Token refresh network error: {e!s}")
+    except ValueError as e:
+        logger.error(f"Token refresh validation error: {e!s}")
+    except RuntimeError as e:
+        logger.error(f"Token refresh runtime error: {e!s}")
 
 
 async def _check_and_refresh_tokens():
