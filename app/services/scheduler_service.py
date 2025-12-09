@@ -3,7 +3,6 @@
 import asyncio
 import logging
 from datetime import UTC, datetime
-from typing import Any
 from zoneinfo import ZoneInfo
 
 import httpx
@@ -219,21 +218,17 @@ class SchedulerService:
                 await session.commit()
                 await session.refresh(run_history)
 
-            # Execute bulk apply
-            results = await self._execute_bulk_apply(
+            # Execute bulk apply with incremental progress updates
+            sent, skipped, failed = await self._execute_bulk_apply_with_progress(
                 user_id=user_id,
+                run_history_id=run_history.id if run_history else None,
                 search_criteria=user_settings.search_criteria,
                 max_applications=user_settings.max_applications_per_run,
                 resume_id=user_settings.resume_id,
             )
 
-            # Update statistics
-            sent = sum(1 for r in results if r.get("status") == "success")
-            skipped = sum(1 for r in results if r.get("status") == "skipped")
-            failed = sum(1 for r in results if r.get("status") == "error")
-
+            # Final update with completed status
             async with async_session() as session:
-                # Update run history
                 if run_history:
                     await session.execute(
                         update(SchedulerRunHistory)
@@ -241,14 +236,9 @@ class SchedulerService:
                         .values(
                             finished_at=_now(),
                             status="completed",
-                            applications_sent=sent,
-                            applications_skipped=skipped,
-                            applications_failed=failed,
-                            details={"results": results},
                         )
                     )
 
-                # Update user settings statistics
                 await session.execute(
                     update(SchedulerSettings)
                     .where(SchedulerSettings.user_id == user_id)
@@ -325,14 +315,22 @@ class SchedulerService:
         """Check if a job is running for user."""
         return self._running_jobs.get(user_id, False)
 
-    async def _execute_bulk_apply(
+    async def _execute_bulk_apply_with_progress(
         self,
         user_id: str,
+        run_history_id: int | None,
         search_criteria: dict,
         max_applications: int,
         resume_id: str | None,
-    ) -> list[dict[str, Any]]:
-        """Execute bulk apply using the application service."""
+    ) -> tuple[int, int, int]:
+        """Execute bulk apply with incremental progress updates.
+
+        Updates the database after each application so statistics
+        are preserved even if the app crashes mid-execution.
+
+        Returns:
+            Tuple of (sent, skipped, failed) counts
+        """
         from app.services.application_service import ApplicationService
         from app.services.hh_client import HHClient
         from app.services.llm.factory import get_llm_provider
@@ -355,23 +353,63 @@ class SchedulerService:
             use_cover_letter=search_criteria.get("use_cover_letter", True),
         )
 
-        # Execute bulk apply with cancellation check
-        results = await service.bulk_apply(
+        sent = 0
+        skipped = 0
+        failed = 0
+
+        # Use streaming to get incremental progress
+        async for progress in service.bulk_apply_stream(
             request=request,
             max_applications=max_applications,
             user_id=user_id,
             cancel_check=lambda: self.is_cancel_requested(user_id),
-        )
+        ):
+            # Update counters from progress
+            if progress.success_count is not None:
+                sent = progress.success_count
+            if progress.skipped_count is not None:
+                skipped = progress.skipped_count
+            if progress.error_count is not None:
+                failed = progress.error_count
 
-        return [
-            {
-                "vacancy_id": r.vacancy_id,
-                "status": r.status,
-                "vacancy_title": r.vacancy_title,
-                "error_detail": r.error_detail,
-            }
-            for r in results
-        ]
+            # Update database with current progress after each result
+            if progress.result and run_history_id:
+                await self._update_run_progress(run_history_id, sent, skipped, failed)
+
+            # Log progress events
+            if progress.event == "progress" and progress.result:
+                logger.debug(
+                    f"Progress: {progress.current}/{progress.total} - "
+                    f"{progress.result.status}: {progress.result.vacancy_title}"
+                )
+            elif progress.event in ["complete", "cancelled", "error"]:
+                logger.info(f"Bulk apply {progress.event}: {progress.message}")
+
+        return sent, skipped, failed
+
+    async def _update_run_progress(
+        self,
+        run_history_id: int,
+        sent: int,
+        skipped: int,
+        failed: int,
+    ) -> None:
+        """Update run history with current progress."""
+        try:
+            async with async_session() as session:
+                await session.execute(
+                    update(SchedulerRunHistory)
+                    .where(SchedulerRunHistory.id == run_history_id)
+                    .values(
+                        applications_sent=sent,
+                        applications_skipped=skipped,
+                        applications_failed=failed,
+                    )
+                )
+                await session.commit()
+        except SQLAlchemyError as e:
+            # Log but don't fail - progress update is not critical
+            logger.warning(f"Failed to update run progress: {e}")
 
     async def get_user_settings(self, user_id: str) -> SchedulerSettingsResponse | None:
         """Get scheduler settings for a user."""
