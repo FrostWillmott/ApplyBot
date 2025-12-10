@@ -103,6 +103,8 @@ class AutoReplyService:
             id=job_id,
             args=[user_settings.user_id],
             replace_existing=True,
+            misfire_grace_time=7200,  # 2 hours - handle sleep/suspend periods
+            coalesce=True,  # Run only once if multiple runs were missed
         )
 
         next_run = self._scheduler.get_job(job_id).next_run_time

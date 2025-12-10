@@ -122,6 +122,9 @@ class SchedulerService:
                 await self._schedule_user_job(user_setting)
                 logger.info(f"Loaded scheduled job for user {user_setting.user_id}")
 
+                # Check if we missed today's run and should execute it now
+                await self._check_and_run_missed_job(user_setting)
+
     async def _schedule_user_job(self, user_settings: SchedulerSettings):
         """Schedule a job for a specific user."""
         if self._scheduler is None:
@@ -170,7 +173,8 @@ class SchedulerService:
             id=job_id,
             args=[user_settings.user_id],
             replace_existing=True,
-            misfire_grace_time=3600,
+            misfire_grace_time=14400,  # 4 hours - handle longer sleep/suspend periods
+            coalesce=True,  # Run only once if multiple runs were missed
         )
 
         # Get next run time from the scheduled job for accurate logging
@@ -181,6 +185,88 @@ class SchedulerService:
             f"at {user_settings.schedule_hour}:{user_settings.schedule_minute:02d} "
             f"on days {user_settings.schedule_days}, next run: {next_run}"
         )
+
+    async def _check_and_run_missed_job(self, user_settings: SchedulerSettings):
+        """Check if today's scheduled run was missed and execute if needed.
+
+        This handles the case where the computer was sleeping/suspended
+        during the scheduled time and we want to run the job anyway.
+        """
+        user_tz = ZoneInfo(user_settings.timezone)
+        now = datetime.now(user_tz)
+
+        # Check if today is a scheduled day
+        days_map = {
+            "mon": 0,
+            "tue": 1,
+            "wed": 2,
+            "thu": 3,
+            "fri": 4,
+            "sat": 5,
+            "sun": 6,
+        }
+        scheduled_days = [
+            days_map.get(d.strip().lower())
+            for d in user_settings.schedule_days.split(",")
+            if d.strip().lower() in days_map
+        ]
+
+        if now.weekday() not in scheduled_days:
+            logger.debug(
+                f"Today ({now.strftime('%A')}) is not a scheduled day for {user_settings.user_id}"
+            )
+            return
+
+        # Check if current time is past the scheduled time
+        scheduled_time = now.replace(
+            hour=user_settings.schedule_hour,
+            minute=user_settings.schedule_minute,
+            second=0,
+            microsecond=0,
+        )
+
+        if now < scheduled_time:
+            logger.debug(
+                f"Scheduled time {scheduled_time} hasn't passed yet for {user_settings.user_id}"
+            )
+            return
+
+        # Check if we already ran today
+        today_start = now.replace(hour=0, minute=0, second=0, microsecond=0)
+        today_start_utc = today_start.astimezone(UTC).replace(tzinfo=None)
+
+        async with async_session() as session:
+            query = select(SchedulerRunHistory).where(
+                SchedulerRunHistory.user_id == user_settings.user_id,
+                SchedulerRunHistory.started_at >= today_start_utc,
+            )
+            result = await session.execute(query)
+            today_runs = result.scalars().all()
+
+            if today_runs:
+                logger.info(
+                    f"Already ran {len(today_runs)} time(s) today for {user_settings.user_id}, "
+                    f"skipping missed job check"
+                )
+                return
+
+        # Check if the missed window is within acceptable range (4 hours)
+        time_since_scheduled = (now - scheduled_time).total_seconds()
+        max_missed_window = 14400  # 4 hours in seconds
+
+        if time_since_scheduled > max_missed_window:
+            logger.info(
+                f"Scheduled time was {time_since_scheduled / 3600:.1f} hours ago, "
+                f"exceeds {max_missed_window / 3600:.0f}h window for {user_settings.user_id}"
+            )
+            return
+
+        # Run the missed job
+        logger.info(
+            f"Detected missed scheduled run for {user_settings.user_id} "
+            f"(was scheduled for {scheduled_time}, now {now}). Running now..."
+        )
+        asyncio.create_task(self._run_auto_apply(user_settings.user_id))
 
     async def _run_auto_apply(self, user_id: str):
         """Execute auto-apply for a user."""
