@@ -146,3 +146,22 @@ def mock_oauth_state_store(monkeypatch):
 
     monkeypatch.setattr("app.routers.auth.OAuthStateStore", mock_store)
     return mock_store
+
+
+@pytest.fixture(autouse=True)
+def mock_processed_vacancy_cache(monkeypatch):
+    """Mock ProcessedVacancyCache for tests that don't have Redis.
+
+    This is autouse=True so it applies to all tests automatically.
+    """
+    mock_cache = MagicMock()
+    # filter_new returns all IDs as "new" (not cached)
+    mock_cache.filter_new = AsyncMock(side_effect=lambda ids: ids)
+    mock_cache.add_many = AsyncMock()
+    mock_cache.is_processed = AsyncMock(return_value=False)
+    mock_cache.get_stats = AsyncMock(return_value={"cached_vacancy_ids": 0})
+
+    monkeypatch.setattr(
+        "app.services.application_service.ProcessedVacancyCache", mock_cache
+    )
+    return mock_cache
