@@ -11,6 +11,7 @@ from fastapi import HTTPException
 from sqlalchemy import select
 from sqlalchemy.exc import SQLAlchemyError
 
+from app.core.redis_client import ProcessedVacancyCache
 from app.core.storage import async_session
 from app.models.application import ApplicationHistory
 from app.schemas.apply import (
@@ -217,6 +218,8 @@ class ApplicationService:
                             error_detail=f"Filtered: {filter_reason}",
                         )
                     )
+                    # Cache filtered vacancy to avoid re-checking
+                    await self._cache_processed_vacancy(vacancy_id)
                     continue
 
                 use_cover_letter = getattr(request, "use_cover_letter", True)
@@ -227,6 +230,8 @@ class ApplicationService:
                     use_cover_letter=use_cover_letter,
                 )
                 results.append(response)
+                # Cache processed vacancy (applied or error)
+                await self._cache_processed_vacancy(vacancy_id)
 
                 if response.status == "success":
                     applied_count += 1
@@ -424,6 +429,8 @@ class ApplicationService:
                         result=result,
                         message=f"Skipped: {vacancy_title} ({filter_reason})",
                     )
+                    # Cache filtered vacancy to avoid re-checking
+                    await self._cache_processed_vacancy(vacancy_id)
                     continue
 
                 # Apply to vacancy
@@ -434,6 +441,8 @@ class ApplicationService:
                     user_id,
                     use_cover_letter=use_cover_letter,
                 )
+                # Cache processed vacancy (applied or error)
+                await self._cache_processed_vacancy(vacancy_id)
 
                 if response.status == "success":
                     success_count += 1
@@ -539,9 +548,19 @@ class ApplicationService:
     async def _search_vacancies_for_bulk(
         self, request: BulkApplyRequest, max_applications: int
     ) -> list[dict]:
-        """Search and collect vacancies with API-level filtering."""
-        all_vacancies = []
-        page = 0
+        """Search and collect vacancies with multiple search queries.
+
+        Parses position string to create multiple search queries:
+        - "Python-разработчик (Django, FastAPI)" becomes:
+          - "Python разработчик"
+          - "Django"
+          - "FastAPI"
+
+        Uses Redis cache to skip already-processed vacancy IDs.
+        """
+        employment = None
+        if request.employment_types and len(request.employment_types) == 1:
+            employment = request.employment_types[0]
 
         schedule = None
         if request.remote_only:
@@ -549,45 +568,126 @@ class ApplicationService:
         elif request.preferred_schedule and len(request.preferred_schedule) == 1:
             schedule = request.preferred_schedule[0]
 
-        employment = None
-        if request.employment_types and len(request.employment_types) == 1:
-            employment = request.employment_types[0]
-
+        # Parse position into multiple search queries
+        search_queries = self._parse_position_to_queries(request.position)
         logger.info(
-            f"Searching vacancies with API filters: "
-            f"text={request.position}, experience={request.experience_level}, "
-            f"schedule={schedule}, salary={request.salary_min}"
+            f"Parsed position '{request.position}' into {len(search_queries)} queries: "
+            f"{search_queries}"
         )
 
-        while len(all_vacancies) < max_applications * 2:
-            search_results = await self.hh_client.search_vacancies(
-                text=request.position,
-                experience=request.experience_level,
-                schedule=schedule,
-                employment=employment,
-                salary=request.salary_min,
-                only_with_salary=bool(request.salary_min),
-                page=page,
-                per_page=100,
-            )
+        all_vacancies: dict[str, dict] = {}  # Use dict to deduplicate by ID
+        skipped_cached = 0
 
-            page_vacancies = search_results.get("items", [])
-            if not page_vacancies:
-                break
+        for query in search_queries:
+            if len(all_vacancies) >= max_applications * 3:
+                break  # Enough vacancies collected
 
-            all_vacancies.extend(page_vacancies)
-            page += 1
-
-            total_found = search_results.get("found", 0)
             logger.info(
-                f"Page {page}: got {len(page_vacancies)} vacancies (total found: {total_found})"
+                f"Searching: text='{query}', experience={request.experience_level}, "
+                f"schedule={schedule}, salary={request.salary_min}"
             )
 
-            if page >= 3:
-                break
+            page = 0
+            max_pages = 3
 
-        logger.info(f"Collected {len(all_vacancies)} pre-filtered vacancies from API")
-        return all_vacancies
+            while len(all_vacancies) < max_applications * 3 and page < max_pages:
+                search_results = await self.hh_client.search_vacancies(
+                    text=query,
+                    experience=request.experience_level,
+                    schedule=schedule,
+                    employment=employment,
+                    salary=request.salary_min,
+                    only_with_salary=bool(request.salary_min),
+                    page=page,
+                    per_page=100,
+                )
+
+                page_vacancies = search_results.get("items", [])
+                if not page_vacancies:
+                    break
+
+                # Filter out already-processed vacancies using Redis cache
+                vacancy_ids = [str(v.get("id", "")) for v in page_vacancies]
+                new_ids = await ProcessedVacancyCache.filter_new(vacancy_ids)
+                new_ids_set = set(new_ids)
+                skipped_cached += len(vacancy_ids) - len(new_ids)
+
+                # Add new vacancies (deduplicated by ID)
+                for v in page_vacancies:
+                    vid = str(v.get("id", ""))
+                    if vid in new_ids_set and vid not in all_vacancies:
+                        all_vacancies[vid] = v
+
+                page += 1
+                total_found = search_results.get("found", 0)
+                logger.info(
+                    f"  Query '{query}' page {page}: +{len(page_vacancies)} vacancies "
+                    f"(total unique: {len(all_vacancies)}, HH total: {total_found})"
+                )
+
+        result = list(all_vacancies.values())
+        logger.info(
+            f"Collected {len(result)} unique vacancies from {len(search_queries)} queries "
+            f"(skipped {skipped_cached} already processed)"
+        )
+        return result
+
+    def _parse_position_to_queries(self, position: str) -> list[str]:
+        """Parse position string into multiple search queries.
+
+        Examples:
+        - "Python-разработчик (Django, FastAPI)" ->
+          ["Python разработчик", "Django разработчик", "FastAPI разработчик"]
+        - "Backend developer" -> ["Backend developer"]
+        """
+        import re
+
+        queries = []
+
+        # Extract content in parentheses
+        paren_match = re.search(r"\(([^)]+)\)", position)
+        keywords_in_parens = []
+        if paren_match:
+            # Split by comma and clean up
+            keywords_in_parens = [
+                kw.strip() for kw in paren_match.group(1).split(",") if kw.strip()
+            ]
+
+        # Get main part (before parentheses), clean it up
+        main_part = re.sub(r"\s*\([^)]*\)\s*", "", position).strip()
+        # Replace dashes/hyphens with spaces (including en-dash and em-dash)
+        main_part_clean = re.sub(r"[-\u2013\u2014]", " ", main_part)
+        # Normalize multiple spaces
+        main_part_clean = re.sub(r"\s+", " ", main_part_clean).strip()
+
+        # Add main query
+        if main_part_clean:
+            queries.append(main_part_clean)
+
+        # Add queries for each keyword in parentheses
+        # Combined with base role word (разработчик, developer, etc.)
+        role_words = ["разработчик", "developer", "инженер", "engineer", "программист"]
+        base_role = None
+        for word in role_words:
+            if word in main_part_clean.lower():
+                # Extract the role word with proper case
+                match = re.search(rf"\b({word})\b", main_part_clean, re.IGNORECASE)
+                if match:
+                    base_role = match.group(1)
+                    break
+
+        for keyword in keywords_in_parens:
+            if base_role:
+                # "Django" + "разработчик" -> "Django разработчик"
+                queries.append(f"{keyword} {base_role}")
+            else:
+                queries.append(keyword)
+
+        return queries if queries else [position]
+
+    async def _cache_processed_vacancy(self, vacancy_id: str) -> None:
+        """Cache a vacancy ID after it has been processed (applied or skipped)."""
+        await ProcessedVacancyCache.add_many([vacancy_id])
 
     async def _generate_application_content(
         self,

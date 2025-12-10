@@ -66,3 +66,68 @@ class OAuthStateStore:
         key = f"{cls.PREFIX}{state}"
         await redis.delete(key)
         logger.debug(f"Deleted OAuth state: {state}")
+
+
+class ProcessedVacancyCache:
+    """Cache for processed vacancy IDs to avoid re-downloading.
+
+    Stores vacancy IDs that have been seen/processed with TTL.
+    This helps avoid repeatedly downloading and filtering the same vacancies.
+    """
+
+    PREFIX = "processed_vacancy:"
+    TTL_SECONDS = 86400 * 7  # 7 days - vacancies change rarely
+
+    @classmethod
+    async def add_many(cls, vacancy_ids: list[str]) -> None:
+        """Add multiple vacancy IDs to cache."""
+        if not vacancy_ids:
+            return
+        redis = await get_redis()
+        pipe = redis.pipeline()
+        for vid in vacancy_ids:
+            key = f"{cls.PREFIX}{vid}"
+            pipe.setex(key, cls.TTL_SECONDS, "1")
+        await pipe.execute()
+        logger.debug(f"Cached {len(vacancy_ids)} processed vacancy IDs")
+
+    @classmethod
+    async def is_processed(cls, vacancy_id: str) -> bool:
+        """Check if vacancy ID was already processed."""
+        redis = await get_redis()
+        key = f"{cls.PREFIX}{vacancy_id}"
+        return await redis.exists(key) > 0
+
+    @classmethod
+    async def filter_new(cls, vacancy_ids: list[str]) -> list[str]:
+        """Filter out already processed vacancy IDs, return only new ones."""
+        if not vacancy_ids:
+            return []
+        redis = await get_redis()
+        pipe = redis.pipeline()
+        for vid in vacancy_ids:
+            key = f"{cls.PREFIX}{vid}"
+            pipe.exists(key)
+        results = await pipe.execute()
+        new_ids = [
+            vid for vid, exists in zip(vacancy_ids, results, strict=False) if not exists
+        ]
+        logger.debug(
+            f"Filtered {len(vacancy_ids)} IDs: {len(new_ids)} new, "
+            f"{len(vacancy_ids) - len(new_ids)} already processed"
+        )
+        return new_ids
+
+    @classmethod
+    async def get_stats(cls) -> dict:
+        """Get cache statistics."""
+        redis = await get_redis()
+        # Count keys with our prefix (for debugging)
+        cursor = 0
+        count = 0
+        while True:
+            cursor, keys = await redis.scan(cursor, match=f"{cls.PREFIX}*", count=1000)
+            count += len(keys)
+            if cursor == 0:
+                break
+        return {"cached_vacancy_ids": count}
