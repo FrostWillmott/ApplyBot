@@ -8,7 +8,31 @@ Automated job application system for hh.ru with AI-powered cover letter generati
 
 ## 🚧 Project Status
 
-**🟢 Working** (Last update: December 2025)
+
+**⚠️ DISCONTINUED** (December 2025)
+
+### Why Discontinued
+
+On December 15, 2025, the target platform (HH.ru) shut down their applicant API, making automated applications impossible through official channels.
+
+**Alternatives considered:**
+- Browser automation (Playwright/Selenium) to bypass API restriction
+- Switching to alternative job platforms with available APIs
+- Adapting system for manual-assisted workflow
+
+**Decision:** Project discontinued due to:
+- Browser automation creates arms race with platform anti-bot measures
+- High maintenance cost vs benefit for personal use case
+- Ethical concerns about circumventing platform policies
+- Time better spent on direct job search activities
+
+### What Was Achieved
+
+Before discontinuation, the system successfully:
+- ✅ Processed **200+ job applications** with personalized AI-generated cover letters
+- ✅ Maintained 72% test coverage across 239 tests
+- ✅ Implemented production-ready architecture with CI/CD pipeline
+- ✅ Demonstrated integration of modern backend stack with LLM technology
 
 ### ✅ Features
 - OAuth authentication with hh.ru
