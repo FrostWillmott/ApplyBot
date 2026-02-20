@@ -46,13 +46,13 @@ build-backend = "poetry.core.masonry.api"
 packages = [{ include = "app", from = "." }]
 
 [tool.poetry.group.dev.dependencies]
-ruff = "^0.14.7"
-mypy = "^1.19.0"
-pre-commit = "^4.5.0"
+ruff = "^0.15.2"
+mypy = "^1.19.1"
+pre-commit = "^4.5.1"
 pytest = "^8.3.0"
 pytest-cov = "^6.0.0"
 pytest-asyncio = "^0.24.0"
-aiosqlite = "^0.21.0"
+aiosqlite = "^0.22.1"
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
